@@ -1,11 +1,19 @@
-from aiogram import F, Router
+from aiogram import Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import BotCommandScopeChat, Message
 
-from config import OWNER_ID
+import commands
 import storage
 
 router = Router()
+
+
+def _is_admin(message: Message) -> bool:
+    return storage.is_admin(message.from_user.id)
+
+
+def _is_founder(message: Message) -> bool:
+    return storage.is_founder(message.from_user.id)
 
 
 @router.message(Command("myid", "mening_id"))
@@ -13,7 +21,50 @@ async def cmd_myid(message: Message) -> None:
     await message.reply(f"Sizning chat ID'ingiz: <code>{message.chat.id}</code>")
 
 
-@router.message(Command("adddriver", "shofyor_qoshish"), F.from_user.id == OWNER_ID)
+@router.message(Command("adminadd", "admin_qoshish"), _is_founder)
+async def cmd_add_admin(message: Message) -> None:
+    parts = message.text.split(maxsplit=1)
+    if len(parts) != 2 or not parts[1].strip().lstrip("-").isdigit():
+        await message.reply("Foydalanish: <code>/admin_qoshish 123456789</code>")
+        return
+
+    chat_id = int(parts[1].strip())
+    if storage.add_admin_id(chat_id):
+        await commands.sync_admin_commands(message.bot, chat_id)
+        await message.reply(f"✅ {chat_id} adminlar ro'yxatiga qo'shildi.")
+    else:
+        await message.reply("Bu chat ID allaqachon admin.")
+
+
+@router.message(Command("adminremove", "admin_ochirish"), _is_founder)
+async def cmd_remove_admin(message: Message) -> None:
+    parts = message.text.split(maxsplit=1)
+    if len(parts) != 2 or not parts[1].strip().lstrip("-").isdigit():
+        await message.reply("Foydalanish: <code>/admin_ochirish 123456789</code>")
+        return
+
+    chat_id = int(parts[1].strip())
+    if storage.remove_admin_id(chat_id):
+        try:
+            await message.bot.delete_my_commands(scope=BotCommandScopeChat(chat_id=chat_id))
+        except Exception:
+            pass
+        await message.reply(f"✅ {chat_id} adminlikdan chiqarildi.")
+    else:
+        await message.reply(
+            "Bu chat ID admin emas, yoki bu asosiy admin — asosiy adminlarni "
+            "hech kim (bir-birini ham) o'chira olmaydi."
+        )
+
+
+@router.message(Command("adminlist", "adminlar"), _is_admin)
+async def cmd_list_admins(message: Message) -> None:
+    admin_ids = storage.get_admin_ids()
+    text = "\n".join(f"• <code>{chat_id}</code>" for chat_id in admin_ids)
+    await message.reply(f"Adminlar ro'yxati:\n{text}")
+
+
+@router.message(Command("adddriver", "shofyor_qoshish"), _is_admin)
 async def cmd_add_driver(message: Message) -> None:
     parts = message.text.split(maxsplit=1)
     if len(parts) != 2 or not parts[1].strip().lstrip("-").isdigit():
@@ -27,7 +78,7 @@ async def cmd_add_driver(message: Message) -> None:
         await message.reply("Bu chat ID allaqachon ro'yxatda bor.")
 
 
-@router.message(Command("removedriver", "shofyor_ochirish"), F.from_user.id == OWNER_ID)
+@router.message(Command("removedriver", "shofyor_ochirish"), _is_admin)
 async def cmd_remove_driver(message: Message) -> None:
     parts = message.text.split(maxsplit=1)
     if len(parts) != 2 or not parts[1].strip().lstrip("-").isdigit():
@@ -41,7 +92,7 @@ async def cmd_remove_driver(message: Message) -> None:
         await message.reply("Bu chat ID ro'yxatda topilmadi.")
 
 
-@router.message(Command("listdrivers", "shofyorlar"), F.from_user.id == OWNER_ID)
+@router.message(Command("listdrivers", "shofyorlar"), _is_admin)
 async def cmd_list_drivers(message: Message) -> None:
     driver_ids = storage.get_driver_ids()
     if not driver_ids:
@@ -51,7 +102,7 @@ async def cmd_list_drivers(message: Message) -> None:
     await message.reply(f"Shofyorlar ro'yxati:\n{text}")
 
 
-@router.message(Command("enablegroup", "guruh_yoqish"), F.from_user.id == OWNER_ID)
+@router.message(Command("enablegroup", "guruh_yoqish"), _is_admin)
 async def cmd_enable_group(message: Message) -> None:
     """Shu guruhda yozilsa — o'sha guruhni yoqadi. DM'da chat_id bilan ham ishlaydi."""
     parts = message.text.split(maxsplit=1)
@@ -71,7 +122,7 @@ async def cmd_enable_group(message: Message) -> None:
     await message.reply(f"✅ \"{title}\" ({chat_id}) endi tinglanadi.")
 
 
-@router.message(Command("disablegroup", "guruh_ochirish"), F.from_user.id == OWNER_ID)
+@router.message(Command("disablegroup", "guruh_ochirish"), _is_admin)
 async def cmd_disable_group(message: Message) -> None:
     """Shu guruhda yozilsa — o'sha guruhni o'chiradi. DM'da chat_id bilan ham ishlaydi."""
     parts = message.text.split(maxsplit=1)
@@ -91,7 +142,7 @@ async def cmd_disable_group(message: Message) -> None:
         await message.reply("Bu guruh ro'yxatda topilmadi.")
 
 
-@router.message(Command("listgroups", "guruhlar"), F.from_user.id == OWNER_ID)
+@router.message(Command("listgroups", "guruhlar"), _is_admin)
 async def cmd_list_groups(message: Message) -> None:
     mode = storage.get_group_mode()
     if mode == "all":
@@ -112,13 +163,13 @@ async def cmd_list_groups(message: Message) -> None:
     await message.reply(f"🎯 Rejim: <b>TANLANGAN</b>\nTinglanayotgan guruhlar:\n{text}")
 
 
-@router.message(Command("listenall", "hamma_guruh"), F.from_user.id == OWNER_ID)
+@router.message(Command("listenall", "hamma_guruh"), _is_admin)
 async def cmd_listen_all(message: Message) -> None:
     storage.set_group_mode("all")
     await message.reply("✅ Endi bot a'zo bo'lgan <b>barcha</b> guruhlarni tinglaydi.")
 
 
-@router.message(Command("listenselected", "tanlangan_guruhlar"), F.from_user.id == OWNER_ID)
+@router.message(Command("listenselected", "tanlangan_guruhlar"), _is_admin)
 async def cmd_listen_selected(message: Message) -> None:
     storage.set_group_mode("selected")
     await message.reply(
@@ -127,7 +178,7 @@ async def cmd_listen_selected(message: Message) -> None:
     )
 
 
-@router.message(Command("pausebot", "botni_ochirish"), F.from_user.id == OWNER_ID)
+@router.message(Command("pausebot", "botni_ochirish"), _is_admin)
 async def cmd_pause_bot(message: Message) -> None:
     storage.set_processing_enabled(False)
     await message.reply(
@@ -136,14 +187,85 @@ async def cmd_pause_bot(message: Message) -> None:
     )
 
 
-@router.message(Command("resumebot", "botni_yoqish"), F.from_user.id == OWNER_ID)
+@router.message(Command("resumebot", "botni_yoqish"), _is_admin)
 async def cmd_resume_bot(message: Message) -> None:
     storage.set_processing_enabled(True)
     await message.reply("▶️ Bot yoqildi — xabarlar tekshirilmoqda.")
 
 
-@router.message(Command("status", "holat"), F.from_user.id == OWNER_ID)
+@router.message(Command("aion", "chatgpt_yoqish"), _is_admin)
+async def cmd_ai_on(message: Message) -> None:
+    storage.set_ai_enabled(True)
+    await message.reply(
+        "✅ ChatGPT (OpenAI) tahlili yoqildi — xabarlar aniq tasniflanadi "
+        "(yo'lovchi/shofyor, yo'nalish)."
+    )
+
+
+@router.message(Command("aioff", "chatgpt_ochirish"), _is_admin)
+async def cmd_ai_off(message: Message) -> None:
+    storage.set_ai_enabled(False)
+    await message.reply(
+        "⏸ ChatGPT (OpenAI) tahlili o'chirildi — endi shahar nomi topilgan har qanday "
+        "xabar tekshirilmasdan (kamroq aniq, lekin bepul) forward qilinadi.\n"
+        "Qayta yoqish uchun: <code>/chatgpt_yoqish</code>"
+    )
+
+
+@router.message(Command("status", "holat"), _is_admin)
 async def cmd_status(message: Message) -> None:
-    enabled = storage.is_processing_enabled()
-    state = "▶️ YOQILGAN" if enabled else "⏸ O'CHIRILGAN"
-    await message.reply(f"Bot holati: <b>{state}</b>")
+    bot_enabled = storage.is_processing_enabled()
+    ai_enabled = storage.is_ai_enabled()
+    mode = storage.get_group_mode()
+    bot_state = "▶️ YOQILGAN" if bot_enabled else "⏸ O'CHIRILGAN"
+    ai_state = "▶️ YOQILGAN" if ai_enabled else "⏸ O'CHIRILGAN"
+    mode_state = "🌐 HAMMASI" if mode == "all" else "🎯 TANLANGAN"
+    await message.reply(
+        f"🤖 Bot: <b>{bot_state}</b>\n"
+        f"🧠 ChatGPT tahlili: <b>{ai_state}</b>\n"
+        f"👥 Guruh rejimi: <b>{mode_state}</b>"
+    )
+
+
+@router.message(Command("menu", "yordam", "help"))
+async def cmd_menu(message: Message) -> None:
+    if not storage.is_admin(message.from_user.id):
+        await message.reply(
+            "🤖 Bu bot yo'nalish e'lonlarini avtomatik kuzatib boradi.\n"
+            "O'z chat ID'ingizni bilish uchun: <code>/mening_id</code>"
+        )
+        return
+
+    admin_section = (
+        "<b>👤 Adminlar</b>\n"
+        "/admin_qoshish &lt;id&gt; — yangi admin qo'shish\n"
+        "/admin_ochirish &lt;id&gt; — adminlikdan chiqarish\n"
+        "/adminlar — adminlar ro'yxati\n\n"
+        if storage.is_founder(message.from_user.id)
+        else ""
+    )
+
+    text = (
+        "📋 <b>Barcha buyruqlar</b>\n\n"
+        "<b>🤖 Bot holati</b>\n"
+        "/botni_yoqish — botni yoqish\n"
+        "/botni_ochirish — botni o'chirish (hech narsa tekshirilmaydi)\n"
+        "/chatgpt_yoqish — AI tahlilini yoqish\n"
+        "/chatgpt_ochirish — AI tahlilini o'chirish (arzonroq, kamroq aniq)\n"
+        "/holat — joriy holatni ko'rish\n\n"
+        f"{admin_section}"
+        "<b>👥 Guruhlar</b>\n"
+        "/hamma_guruh — barcha guruhlarni tinglash rejimi\n"
+        "/tanlangan_guruhlar — faqat tanlangan guruhlarni tinglash rejimi\n"
+        "/guruh_yoqish — shu guruhni (yoki <code>/guruh_yoqish -100...</code>) yoqish\n"
+        "/guruh_ochirish — guruhni tinglashdan chiqarish\n"
+        "/guruhlar — tinglanayotgan guruhlar ro'yxati\n\n"
+        "<b>🚕 Shofyorlar</b>\n"
+        "/shofyor_qoshish &lt;id&gt; — yangi shofyor qo'shish\n"
+        "/shofyor_ochirish &lt;id&gt; — shofyorni o'chirish\n"
+        "/shofyorlar — shofyorlar ro'yxati\n\n"
+        "<b>ℹ️ Boshqa</b>\n"
+        "/mening_id — o'z chat ID'ingizni bilish\n"
+        "/menu — shu ro'yxatni qayta ko'rsatish"
+    )
+    await message.reply(text)

@@ -108,15 +108,20 @@ async def process_text(
 
     context_text = build_context(chat_id, user_id, text)
 
-    route_info = await classify_route(context_text)
-    logger.info("classify_route(%r) -> %r", context_text, route_info)
-    if not route_info or not route_info.get("is_route"):
-        return
+    if not storage.is_ai_enabled():
+        # AI o'chirilgan — tasniflashsiz, faqat shahar nomi topilgan xabarlarni
+        # to'g'ridan-to'g'ri forward qilamiz (kamroq aniq, lekin OpenAI xarajatisiz).
+        route_info = {"is_route": True, "from": None, "to": None, "author_role": "unclear"}
+    else:
+        route_info = await classify_route(context_text)
+        logger.info("classify_route(%r) -> %r", context_text, route_info)
+        if not route_info or not route_info.get("is_route"):
+            return
 
-    if route_info.get("author_role") == "driver":
-        # Bu boshqa shofyorning o'z reklama e'loni ("odam/pochta olamiz" — yo'lovchi
-        # qidirayapti), mijoz emas — o'tkazib yuboramiz.
-        return
+        if route_info.get("author_role") == "driver":
+            # Bu boshqa shofyorning o'z reklama e'loni ("odam/pochta olamiz" — yo'lovchi
+            # qidirayapti), mijoz emas — o'tkazib yuboramiz.
+            return
 
     phone = contact_phone or route_info.get("phone") or extract_phone(context_text)
     group_link = build_group_link(chat_id, group_username, message_id)

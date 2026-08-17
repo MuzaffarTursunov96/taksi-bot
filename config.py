@@ -14,8 +14,13 @@ INITIAL_DRIVER_CHAT_IDS = [
     if chat_id.strip()
 ]
 
-# Shofyorlar ro'yxatini /adddriver, /removedriver orqali boshqara oladigan shaxs.
-OWNER_ID = int(os.environ["OWNER_ID"]) if os.environ.get("OWNER_ID") else None
+# Ilk marta ishga tushganda admins.json bo'sh bo'lsa, shu ro'yxat bilan boshlanadi
+# (vergul bilan ajratilgan chat_id'lar). Botni boshqara oladigan shaxslar.
+INITIAL_ADMIN_IDS = [
+    int(chat_id.strip())
+    for chat_id in os.environ.get("OWNER_ID", "").split(",")
+    if chat_id.strip()
+]
 
 # Ilk marta ishga tushganda groups.json bo'sh bo'lsa, shu ro'yxat bilan boshlanadi
 # (vergul bilan ajratilgan chat_id'lar, masalan: -1001234567890,-1009876543210).

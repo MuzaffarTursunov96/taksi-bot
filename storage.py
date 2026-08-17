@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from config import DEFAULT_GROUP_MODE, INITIAL_DRIVER_CHAT_IDS, INITIAL_MONITORED_GROUP_IDS
+from config import (
+    DEFAULT_GROUP_MODE,
+    INITIAL_ADMIN_IDS,
+    INITIAL_DRIVER_CHAT_IDS,
+    INITIAL_MONITORED_GROUP_IDS,
+)
 
 _STORAGE_PATH = Path(__file__).parent / "drivers.json"
 
@@ -78,7 +83,11 @@ def disable_group(chat_id: int) -> bool:
 
 
 _SETTINGS_PATH = Path(__file__).parent / "settings.json"
-_DEFAULT_SETTINGS = {"group_mode": DEFAULT_GROUP_MODE, "processing_enabled": True}
+_DEFAULT_SETTINGS = {
+    "group_mode": DEFAULT_GROUP_MODE,
+    "processing_enabled": True,
+    "ai_enabled": True,
+}
 
 
 def _load_settings() -> dict:
@@ -116,3 +125,64 @@ def set_processing_enabled(enabled: bool) -> None:
     settings = _load_settings()
     settings["processing_enabled"] = enabled
     _save_settings(settings)
+
+
+def is_ai_enabled() -> bool:
+    return _load_settings().get("ai_enabled", True)
+
+
+def set_ai_enabled(enabled: bool) -> None:
+    settings = _load_settings()
+    settings["ai_enabled"] = enabled
+    _save_settings(settings)
+
+
+_ADMINS_PATH = Path(__file__).parent / "admins.json"
+
+
+def _load_admins() -> list[int]:
+    if not _ADMINS_PATH.exists():
+        _save_admins(INITIAL_ADMIN_IDS)
+        return list(INITIAL_ADMIN_IDS)
+    return json.loads(_ADMINS_PATH.read_text(encoding="utf-8"))
+
+
+def _save_admins(admin_ids: list[int]) -> None:
+    _ADMINS_PATH.write_text(json.dumps(admin_ids), encoding="utf-8")
+
+
+def get_admin_ids() -> list[int]:
+    return _load_admins()
+
+
+def is_admin(user_id: int) -> bool:
+    return user_id in _load_admins()
+
+
+def is_founder(user_id: int) -> bool:
+    """Asosiy (.env dagi OWNER_ID) adminlar — faqat ular boshqa adminlarni
+    qo'sha/o'chira oladi."""
+    return user_id in INITIAL_ADMIN_IDS
+
+
+def add_admin_id(chat_id: int) -> bool:
+    """True qaytaradi agar yangi qo'shilgan bo'lsa, allaqachon bor bo'lsa False."""
+    admin_ids = _load_admins()
+    if chat_id in admin_ids:
+        return False
+    admin_ids.append(chat_id)
+    _save_admins(admin_ids)
+    return True
+
+
+def remove_admin_id(chat_id: int) -> bool:
+    """True qaytaradi agar o'chirilgan bo'lsa; asosiy (.env dagi) adminlarni o'chirishga
+    yo'l qo'ymaydi — ular doimiy himoyalangan."""
+    if chat_id in INITIAL_ADMIN_IDS:
+        return False
+    admin_ids = _load_admins()
+    if chat_id not in admin_ids:
+        return False
+    admin_ids.remove(chat_id)
+    _save_admins(admin_ids)
+    return True
