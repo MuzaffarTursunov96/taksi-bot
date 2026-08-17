@@ -117,6 +117,35 @@ def is_group_monitored(chat_id: int) -> bool:
     return str(chat_id) in _load_groups()
 
 
+_KNOWN_GROUPS_PATH = Path(__file__).parent / "known_groups.json"
+
+
+def _load_known_groups() -> dict[str, str]:
+    if not _KNOWN_GROUPS_PATH.exists():
+        _save_known_groups({})
+        return {}
+    return json.loads(_KNOWN_GROUPS_PATH.read_text(encoding="utf-8"))
+
+
+def _save_known_groups(groups: dict[str, str]) -> None:
+    _KNOWN_GROUPS_PATH.write_text(json.dumps(groups), encoding="utf-8")
+
+
+def record_known_group(chat_id: int, title: str | None) -> None:
+    """Bot yoki Telethon ko'rgan har qanday guruh nomini eslab qoladi — bu ro'yxat
+    "guruh qo'shish" menyusida nomlarni ko'rsatish uchun ishlatiladi."""
+    if not title:
+        return
+    groups = _load_known_groups()
+    if groups.get(str(chat_id)) != title:
+        groups[str(chat_id)] = title
+        _save_known_groups(groups)
+
+
+def get_known_groups() -> dict[int, str]:
+    return {int(chat_id): title for chat_id, title in _load_known_groups().items()}
+
+
 def is_processing_enabled() -> bool:
     return _load_settings().get("processing_enabled", True)
 

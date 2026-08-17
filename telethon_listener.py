@@ -31,10 +31,46 @@ def _sender_display(sender) -> str:
     return name or f"id{getattr(sender, 'id', '?')}"
 
 
+async def _rescan_dialogs() -> None:
+    """Barcha guruh/kanal nomlarini xotiraga yozib qo'yadi (yangi qo'shilganlar ham)."""
+    async for dialog in client.iter_dialogs():
+        if dialog.is_group or dialog.is_channel:
+            storage.record_known_group(dialog.id, dialog.title)
+
+
+async def _periodic_rescan() -> None:
+    """10 daqiqada bir marta guruhlar ro'yxatini yangilab turadi — hech narsa qilish
+    shart emas, akkaunt yangi guruhga qo'shilsa avtomatik paydo bo'ladi."""
+    while True:
+        await asyncio.sleep(600)
+        try:
+            await _rescan_dialogs()
+        except Exception:
+            logger.exception("Guruhlarni qayta skanerlashda xato")
+
+
+@client.on(events.ChatAction())
+async def on_chat_action(event: events.ChatAction.Event) -> None:
+    """Akkaunt yangi guruh/kanalga qo'shilganda darhol ro'yxatga qo'shadi."""
+    if not (event.user_joined or event.user_added):
+        return
+    me = await client.get_me()
+    if event.user_id != me.id:
+        return
+    chat = await event.get_chat()
+    title = getattr(chat, "title", None)
+    if title:
+        storage.record_known_group(event.chat_id, title)
+        logger.info("Yangi guruhga qo'shildik: %s — %s", event.chat_id, title)
+
+
 @client.on(events.NewMessage())
 async def on_new_message(event: events.NewMessage.Event) -> None:
     if not (event.is_group or event.is_channel):
         return
+
+    chat = await event.get_chat()
+    storage.record_known_group(event.chat_id, getattr(chat, "title", None))
 
     if not storage.is_group_monitored(event.chat_id):
         return
@@ -43,7 +79,6 @@ async def on_new_message(event: events.NewMessage.Event) -> None:
     if sender is None or getattr(sender, "bot", False):
         return
 
-    chat = await event.get_chat()
     group_kwargs = {
         "group_name": getattr(chat, "title", None),
         "group_username": getattr(chat, "username", None),
@@ -73,11 +108,12 @@ async def main() -> None:
     logger.info("Telethon userbot ishga tushdi, guruhlar tinglanmoqda...")
 
     logger.info("A'zo bo'lgan guruh/kanallar ro'yxati (chat_id — nomi):")
-    async for dialog in client.iter_dialogs():
-        if dialog.is_group or dialog.is_channel:
-            mark = "✅" if storage.is_group_monitored(dialog.id) else "  "
-            logger.info("%s %s — %s", mark, dialog.id, dialog.title)
+    await _rescan_dialogs()
+    for chat_id, title in storage.get_known_groups().items():
+        mark = "✅" if storage.is_group_monitored(chat_id) else "  "
+        logger.info("%s %s — %s", mark, chat_id, title)
 
+    asyncio.create_task(_periodic_rescan())
     await client.run_until_disconnected()
 
 

@@ -1,13 +1,48 @@
+import asyncio
 import json
 import re
+import time
+from pathlib import Path
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, APIStatusError, RateLimitError
 
 from config import CITY_ALIASES, OPENAI_API_KEY
 
 PHONE_RE = re.compile(r"(\+?998[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\b\d{9}\b)")
 
 _client = AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+# Kelajakda o'z modelimizni o'qitish uchun: OpenAI har bir tasnifini shu faylga
+# yozib boradi (matn + natija). Fayl vaqt o'tishi bilan o'quv ma'lumotiga aylanadi.
+TRAINING_DATA_PATH = Path(__file__).parent / "training_data.jsonl"
+
+
+def _record_training_example(text: str, result: dict) -> None:
+    try:
+        with open(TRAINING_DATA_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.time(), "text": text, "label": result}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass  # o'quv ma'lumotini yozib bo'lmasa ham, botning asosiy ishiga xalaqit bermasin
+
+
+class OpenAIQuotaExceeded(Exception):
+    """OpenAI balansi haqiqatan ham tugaganda (insufficient_quota) ko'tariladi.
+
+    Oddiy vaqtinchalik "tezlik chegarasi" (rate limit) bundan farqli — u avtomatik
+    qayta uriniladi, balans tugashi bilan aralashtirilmaydi.
+    """
+
+
+def _is_quota_exhausted(error: RateLimitError | APIStatusError) -> bool:
+    body = getattr(error, "body", None)
+    error_info = body.get("error", {}) if isinstance(body, dict) else {}
+    if not isinstance(error_info, dict):
+        error_info = {}
+    code = error_info.get("code")
+    err_type = error_info.get("type")
+    return code == "insufficient_quota" or err_type == "insufficient_quota" or (
+        "insufficient_quota" in str(error)
+    )
 
 
 def quick_prefilter(text: str) -> bool:
@@ -92,16 +127,42 @@ async def classify_route(text: str) -> dict | None:
         '"author_role": "passenger" yoki "driver" yoki "unclear"}'
     )
 
-    response = await _client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f'Xabar: """{text}"""'},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0,
-    )
+    response = None
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        try:
+            response = await _client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f'Xabar: """{text}"""'},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0,
+            )
+            break
+        except RateLimitError as e:
+            if _is_quota_exhausted(e):
+                raise OpenAIQuotaExceeded(str(e)) from e
+            if attempt == max_attempts - 1:
+                # Balans muammosi emas, shunchaki vaqtinchalik tezlik chegarasi —
+                # bir necha marta urinib ko'rdik, hozircha bu xabarni o'tkazib yuboramiz.
+                return None
+            await asyncio.sleep(2 * (attempt + 1))
+        except APIStatusError as e:
+            if e.status_code == 429 and not _is_quota_exhausted(e):
+                if attempt == max_attempts - 1:
+                    return None
+                await asyncio.sleep(2 * (attempt + 1))
+                continue
+            if _is_quota_exhausted(e):
+                raise OpenAIQuotaExceeded(str(e)) from e
+            raise
+
     try:
-        return json.loads(response.choices[0].message.content)
+        result = json.loads(response.choices[0].message.content)
     except (json.JSONDecodeError, IndexError, AttributeError):
         return None
+
+    _record_training_example(text, result)
+    return result

@@ -5,9 +5,34 @@ from aiogram import Bot
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 import storage
-from filters import classify_route, extract_phone, quick_prefilter
+from filters import OpenAIQuotaExceeded, classify_route, extract_phone, quick_prefilter
 
 logger = logging.getLogger(__name__)
+
+_QUOTA_ALERT_COOLDOWN = 30 * 60  # adminlarni har xabarda emas, 30 daqiqada bir marta bezovta qilamiz
+_last_quota_alert: float = 0.0
+
+
+async def _notify_admins_quota_exceeded(bot: Bot) -> None:
+    global _last_quota_alert
+    now = time.monotonic()
+    if now - _last_quota_alert < _QUOTA_ALERT_COOLDOWN:
+        return
+    _last_quota_alert = now
+
+    storage.set_ai_enabled(False)
+    text = (
+        "⚠️ <b>OpenAI (ChatGPT) balansi tugadi yoki limit oshib ketdi!</b>\n\n"
+        "AI tahlili avtomatik <b>o'chirildi</b> — xabarlar endi tekshirilmasdan "
+        "(kamroq aniq) forward qilinadi.\n\n"
+        "Hisobingizga mablag' qo'shgandan so'ng, qayta yoqish uchun: "
+        "🤖 Bot menyusi → 🧠 AI yoqish."
+    )
+    for admin_id in storage.get_admin_ids():
+        try:
+            await bot.send_message(admin_id, text)
+        except Exception:
+            logger.exception("Admin (%s)ga OpenAI xato haqida xabar yuborib bo'lmadi", admin_id)
 
 # Bir xil odamning ketma-ket yozgan xabarlarini birlashtirish uchun (masalan
 # "toshkentdan ketmoqchi edim" va keyingi xabarda "noringa"). Kalit: (chat_id, user_id).
@@ -113,7 +138,12 @@ async def process_text(
         # to'g'ridan-to'g'ri forward qilamiz (kamroq aniq, lekin OpenAI xarajatisiz).
         route_info = {"is_route": True, "from": None, "to": None, "author_role": "unclear"}
     else:
-        route_info = await classify_route(context_text)
+        try:
+            route_info = await classify_route(context_text)
+        except OpenAIQuotaExceeded:
+            logger.warning("OpenAI kvotasi tugadi, AI o'chirilmoqda")
+            await _notify_admins_quota_exceeded(bot)
+            return
         logger.info("classify_route(%r) -> %r", context_text, route_info)
         if not route_info or not route_info.get("is_route"):
             return

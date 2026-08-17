@@ -9,3 +9,8 @@ userbot_session.session
 userbot_session.session-journal
 ssh-key-2026-08-14.key
 ssh-key-2026-08-14.key.pub
+admins.json
+known_groups.json
+training_data.jsonl
+userbot_session_backfill.session
+userbot_session_backfill.session-journal

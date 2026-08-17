@@ -1,4 +1,5 @@
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -17,6 +18,24 @@ import storage
 
 router = Router()
 
+
+async def _safe_edit_text(message: Message, text: str, reply_markup=None) -> None:
+    """Telegram bir xil matn/tugmalarni qayta yuborishga ruxsat bermaydi —
+    bunday xatoni sezilmas qilib o'tkazib yuboramiz."""
+    try:
+        await message.edit_text(text, reply_markup=reply_markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            raise
+
+
+async def _safe_edit_markup(message: Message, reply_markup=None) -> None:
+    try:
+        await message.edit_reply_markup(reply_markup=reply_markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            raise
+
 BTN_BOT = "🤖 Bot"
 BTN_GROUPS = "👥 Guruhlar"
 BTN_DRIVERS = "🚕 Shofyorlar"
@@ -24,13 +43,14 @@ BTN_ADMINS = "👤 Adminlar"
 BTN_STATUS = "📊 Holat"
 
 
+GROUPS_PAGE_SIZE = 8
+
+
 class AdminInput(StatesGroup):
     driver_add = State()
     driver_remove = State()
     admin_add = State()
     admin_remove = State()
-    group_enable = State()
-    group_disable = State()
 
 
 def _is_admin(message: Message) -> bool:
@@ -73,23 +93,98 @@ def bot_inline_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def groups_inline_keyboard() -> InlineKeyboardMarkup:
+def _short(title: str, limit: int = 30) -> str:
+    return title if len(title) <= limit else title[: limit - 1] + "…"
+
+
+def _group_display_name(chat_id: int, fallback: str) -> str:
+    """Telethon xotirasidagi haqiqiy nomni afzal ko'radi (agar mavjud bo'lsa)."""
+    known = storage.get_known_groups()
+    return known.get(chat_id, fallback)
+
+
+def groups_menu_text() -> str:
     mode = storage.get_group_mode()
-    mode_label = "🌐 Rejim: HAMMASI" if mode == "all" else "🎯 Rejim: TANLANGAN"
+    if mode == "all":
+        return (
+            "👥 <b>Guruhlar boshqaruvi</b>\n\n"
+            "🌐 Joriy rejim: <b>BARCHA GURUHLAR</b>\n"
+            "Bot a'zo bo'lgan <b>har qanday</b> guruhdagi xabarlarni tekshiradi."
+        )
+    return (
+        "👥 <b>Guruhlar boshqaruvi</b>\n\n"
+        "🎯 Joriy rejim: <b>FAQAT TANLANGANLAR</b>\n"
+        "Bot faqat pastdagi \"Tinglanayotganlar\" ro'yxatidagi guruhlarni tekshiradi, "
+        "qolganlarini e'tiborsiz qoldiradi."
+    )
+
+
+def groups_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=mode_label, callback_data="noop")],
             [
-                InlineKeyboardButton(text="🌐 Hammasi", callback_data="group:mode_all"),
-                InlineKeyboardButton(text="🎯 Tanlangan", callback_data="group:mode_selected"),
+                InlineKeyboardButton(text="🌐 Barchasini tinglash", callback_data="group:mode_all"),
+                InlineKeyboardButton(text="🎯 Faqat tanlanganlarni", callback_data="group:mode_selected"),
             ],
-            [InlineKeyboardButton(text="📋 Ro'yxatni ko'rish", callback_data="group:list")],
-            [
-                InlineKeyboardButton(text="➕ Guruh qo'shish", callback_data="group:add"),
-                InlineKeyboardButton(text="➖ Guruh o'chirish", callback_data="group:remove"),
-            ],
+            [InlineKeyboardButton(text="📋 Tinglanayotganlar", callback_data="group:list")],
+            [InlineKeyboardButton(text="➕ Guruh qo'shish", callback_data="group:addpage:0")],
         ]
     )
+
+
+def monitored_groups_keyboard() -> InlineKeyboardMarkup:
+    groups = storage.get_monitored_groups()
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_short(_group_display_name(chat_id, title)),
+                callback_data=f"group:view:{chat_id}",
+            )
+        ]
+        for chat_id, title in groups.items()
+    ]
+    if not rows:
+        rows.append([InlineKeyboardButton(text="(bo'sh)", callback_data="noop")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="group:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def group_view_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛑 Tinglashni to'xtatish", callback_data=f"group:disable:{chat_id}")],
+            [InlineKeyboardButton(text="🔙 Ro'yxatga qaytish", callback_data="group:list")],
+        ]
+    )
+
+
+def add_group_keyboard(page: int) -> InlineKeyboardMarkup:
+    known = storage.get_known_groups()
+    monitored_ids = set(storage.get_monitored_groups().keys())
+    candidates = sorted(
+        ((cid, title) for cid, title in known.items() if cid not in monitored_ids),
+        key=lambda item: item[1].lower(),
+    )
+    start = page * GROUPS_PAGE_SIZE
+    page_items = candidates[start : start + GROUPS_PAGE_SIZE]
+
+    rows = [
+        [InlineKeyboardButton(text=_short(title), callback_data=f"group:enable:{chat_id}:{page}")]
+        for chat_id, title in page_items
+    ]
+    if not candidates:
+        rows.append([InlineKeyboardButton(text="(qo'shiladigan guruh yo'q)", callback_data="noop")])
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"group:addpage:{page - 1}"))
+    nav.append(InlineKeyboardButton(text="🔄 Yangilash", callback_data=f"group:addpage:{page}"))
+    if start + GROUPS_PAGE_SIZE < len(candidates):
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"group:addpage:{page + 1}"))
+    rows.append(nav)
+
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="group:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def drivers_inline_keyboard() -> InlineKeyboardMarkup:
@@ -149,7 +244,7 @@ async def show_bot_menu(message: Message) -> None:
 
 @router.message(F.text == BTN_GROUPS, _is_admin)
 async def show_groups_menu(message: Message) -> None:
-    await message.answer("👥 Guruhlar boshqaruvi:", reply_markup=groups_inline_keyboard())
+    await message.answer(groups_menu_text(), reply_markup=groups_inline_keyboard())
 
 
 @router.message(F.text == BTN_DRIVERS, _is_admin)
@@ -183,7 +278,7 @@ async def cb_bot_on(callback: CallbackQuery) -> None:
         return await callback.answer()
     storage.set_processing_enabled(True)
     await callback.answer("Bot yoqildi ✅")
-    await callback.message.edit_reply_markup(reply_markup=bot_inline_keyboard())
+    await _safe_edit_markup(callback.message, bot_inline_keyboard())
 
 
 @router.callback_query(F.data == "bot:off")
@@ -192,7 +287,7 @@ async def cb_bot_off(callback: CallbackQuery) -> None:
         return await callback.answer()
     storage.set_processing_enabled(False)
     await callback.answer("Bot o'chirildi ⏸")
-    await callback.message.edit_reply_markup(reply_markup=bot_inline_keyboard())
+    await _safe_edit_markup(callback.message, bot_inline_keyboard())
 
 
 @router.callback_query(F.data == "ai:on")
@@ -201,7 +296,7 @@ async def cb_ai_on(callback: CallbackQuery) -> None:
         return await callback.answer()
     storage.set_ai_enabled(True)
     await callback.answer("AI tahlili yoqildi ✅")
-    await callback.message.edit_reply_markup(reply_markup=bot_inline_keyboard())
+    await _safe_edit_markup(callback.message, bot_inline_keyboard())
 
 
 @router.callback_query(F.data == "ai:off")
@@ -210,25 +305,56 @@ async def cb_ai_off(callback: CallbackQuery) -> None:
         return await callback.answer()
     storage.set_ai_enabled(False)
     await callback.answer("AI tahlili o'chirildi ⏸")
-    await callback.message.edit_reply_markup(reply_markup=bot_inline_keyboard())
+    await _safe_edit_markup(callback.message, bot_inline_keyboard())
+
+
+@router.callback_query(F.data == "group:menu")
+async def cb_group_menu(callback: CallbackQuery) -> None:
+    if not storage.is_admin(callback.from_user.id):
+        return await callback.answer()
+    await callback.answer()
+    await _safe_edit_text(callback.message, groups_menu_text(), groups_inline_keyboard())
 
 
 @router.callback_query(F.data == "group:list")
 async def cb_group_list(callback: CallbackQuery) -> None:
     if not storage.is_admin(callback.from_user.id):
         return await callback.answer()
-    mode = storage.get_group_mode()
-    if mode == "all":
-        text = "🌐 Rejim: HAMMASI — bot barcha guruhlarni tinglaydi."
-    else:
-        groups = storage.get_monitored_groups()
-        if not groups:
-            text = "🎯 Rejim: TANLANGAN, lekin ro'yxat bo'sh."
-        else:
-            lines = "\n".join(f"• {title} — <code>{chat_id}</code>" for chat_id, title in groups.items())
-            text = f"🎯 Rejim: TANLANGAN\n{lines}"
     await callback.answer()
-    await callback.message.answer(text)
+    await _safe_edit_text(
+        callback.message,
+        "📋 Tinglanayotgan guruhlar (to'xtatish uchun bosing):",
+        monitored_groups_keyboard(),
+    )
+
+
+@router.callback_query(F.data.startswith("group:view:"))
+async def cb_group_view(callback: CallbackQuery) -> None:
+    if not storage.is_admin(callback.from_user.id):
+        return await callback.answer()
+    chat_id = int(callback.data.split(":")[2])
+    fallback = storage.get_monitored_groups().get(chat_id, str(chat_id))
+    title = _group_display_name(chat_id, fallback)
+    await callback.answer()
+    await _safe_edit_text(
+        callback.message,
+        f"👥 <b>{title}</b>\n<code>{chat_id}</code>",
+        group_view_keyboard(chat_id),
+    )
+
+
+@router.callback_query(F.data.startswith("group:disable:"))
+async def cb_group_disable(callback: CallbackQuery) -> None:
+    if not storage.is_admin(callback.from_user.id):
+        return await callback.answer()
+    chat_id = int(callback.data.split(":")[2])
+    storage.disable_group(chat_id)
+    await callback.answer("Tinglash to'xtatildi ✅")
+    await _safe_edit_text(
+        callback.message,
+        "📋 Tinglanayotgan guruhlar (to'xtatish uchun bosing):",
+        monitored_groups_keyboard(),
+    )
 
 
 @router.callback_query(F.data == "group:mode_all")
@@ -236,8 +362,8 @@ async def cb_group_mode_all(callback: CallbackQuery) -> None:
     if not storage.is_admin(callback.from_user.id):
         return await callback.answer()
     storage.set_group_mode("all")
-    await callback.answer("Rejim: HAMMASI ✅")
-    await callback.message.edit_reply_markup(reply_markup=groups_inline_keyboard())
+    await callback.answer("Endi barcha guruhlar tinglanadi ✅")
+    await _safe_edit_text(callback.message, groups_menu_text(), groups_inline_keyboard())
 
 
 @router.callback_query(F.data == "group:mode_selected")
@@ -245,26 +371,34 @@ async def cb_group_mode_selected(callback: CallbackQuery) -> None:
     if not storage.is_admin(callback.from_user.id):
         return await callback.answer()
     storage.set_group_mode("selected")
-    await callback.answer("Rejim: TANLANGAN ✅")
-    await callback.message.edit_reply_markup(reply_markup=groups_inline_keyboard())
+    await callback.answer("Endi faqat tanlangan guruhlar tinglanadi ✅")
+    await _safe_edit_text(callback.message, groups_menu_text(), groups_inline_keyboard())
 
 
-@router.callback_query(F.data == "group:add")
-async def cb_group_add(callback: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(F.data.startswith("group:addpage:"))
+async def cb_group_addpage(callback: CallbackQuery) -> None:
     if not storage.is_admin(callback.from_user.id):
         return await callback.answer()
-    await state.set_state(AdminInput.group_enable)
+    page = int(callback.data.split(":")[2])
     await callback.answer()
-    await callback.message.answer("Guruh chat_id'sini yuboring (masalan: -1001234567890):")
+    await _safe_edit_text(
+        callback.message,
+        "➕ Qo'shish uchun guruhni tanlang:",
+        add_group_keyboard(page),
+    )
 
 
-@router.callback_query(F.data == "group:remove")
-async def cb_group_remove(callback: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(F.data.startswith("group:enable:"))
+async def cb_group_enable(callback: CallbackQuery) -> None:
     if not storage.is_admin(callback.from_user.id):
         return await callback.answer()
-    await state.set_state(AdminInput.group_disable)
-    await callback.answer()
-    await callback.message.answer("O'chiriladigan guruh chat_id'sini yuboring:")
+    parts = callback.data.split(":")
+    chat_id = int(parts[2])
+    page = int(parts[3]) if len(parts) > 3 else 0
+    title = storage.get_known_groups().get(chat_id, f"chat {chat_id}")
+    storage.enable_group(chat_id, title)
+    await callback.answer(f"{title} qo'shildi ✅")
+    await _safe_edit_markup(callback.message, add_group_keyboard(page))
 
 
 @router.callback_query(F.data == "driver:list")
@@ -350,30 +484,6 @@ async def input_driver_remove(message: Message, state: FSMContext) -> None:
         await message.reply(f"✅ {chat_id} ro'yxatdan o'chirildi.")
     else:
         await message.reply("Bu chat ID ro'yxatda topilmadi.")
-
-
-@router.message(AdminInput.group_enable)
-async def input_group_enable(message: Message, state: FSMContext) -> None:
-    chat_id = _parse_chat_id(message.text)
-    await state.clear()
-    if chat_id is None:
-        await message.reply("Noto'g'ri format. Faqat raqam yuboring.")
-        return
-    storage.enable_group(chat_id, f"chat {chat_id}")
-    await message.reply(f"✅ {chat_id} endi tinglanadi.")
-
-
-@router.message(AdminInput.group_disable)
-async def input_group_disable(message: Message, state: FSMContext) -> None:
-    chat_id = _parse_chat_id(message.text)
-    await state.clear()
-    if chat_id is None:
-        await message.reply("Noto'g'ri format. Faqat raqam yuboring.")
-        return
-    if storage.disable_group(chat_id):
-        await message.reply(f"✅ {chat_id} endi tinglanmaydi.")
-    else:
-        await message.reply("Bu guruh ro'yxatda topilmadi.")
 
 
 @router.message(AdminInput.admin_add)
