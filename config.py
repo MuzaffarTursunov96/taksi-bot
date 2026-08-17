@@ -38,6 +38,10 @@ DEFAULT_GROUP_MODE = os.environ.get("GROUP_MODE", "all")
 API_ID = int(os.environ["API_ID"]) if os.environ.get("API_ID") else None
 API_HASH = os.environ.get("API_HASH", "")
 
+# Fine-tuning tugagach shu yerga fine-tuned model nomi yoziladi
+# (masalan: ft:gpt-4o-mini-2024-07-18:...). Bo'sh bo'lsa, standart model ishlatiladi.
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
+
 # Botni ushbu shaharlar orasidagi yo'nalishlarga qiziqtiramiz.
 # Har bir shahar uchun matnda uchraydigan turli yozilish variantlarini kiriting.
 CITY_ALIASES = {

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from openai import AsyncOpenAI, APIStatusError, RateLimitError
 
-from config import CITY_ALIASES, OPENAI_API_KEY
+from config import CITY_ALIASES, OPENAI_API_KEY, OPENAI_MODEL
 
 PHONE_RE = re.compile(r"(\+?998[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\b\d{9}\b)")
 
@@ -67,17 +67,8 @@ def extract_phone(text: str) -> str | None:
     return match.group(0) if match else None
 
 
-async def classify_route(text: str) -> dict | None:
-    """OpenAI orqali xabar yo'nalish e'loni ekanligini, yo'nalishni va yozgan odam
-    yo'lovchimi yoki shofyormi ekanligini aniqlaydi.
-
-    Qaytadi: {"is_route": bool, "from": str, "to": str, "phone": str|None,
-    "author_role": "passenger"|"driver"|"unclear"} yoki None (aniqlab bo'lmasa).
-    """
-    if _client is None:
-        return None
-
-    system_prompt = (
+def build_system_prompt() -> str:
+    return (
         "Sen Telegram taksi/yo'lovchi guruhlaridagi xabarlarni tahlil qiluvchi yordamchisan.\n\n"
         "Xabar shaharlararo yo'nalish haqidami (is_route), qaysi shahardan qaysi shaharga "
         "(from/to), telefon raqami bormi (phone) va ENG MUHIMI — xabarni YO'LOVCHI yozganmi "
@@ -127,12 +118,25 @@ async def classify_route(text: str) -> dict | None:
         '"author_role": "passenger" yoki "driver" yoki "unclear"}'
     )
 
+
+async def classify_route(text: str) -> dict | None:
+    """OpenAI orqali xabar yo'nalish e'loni ekanligini, yo'nalishni va yozgan odam
+    yo'lovchimi yoki shofyormi ekanligini aniqlaydi.
+
+    Qaytadi: {"is_route": bool, "from": str, "to": str, "phone": str|None,
+    "author_role": "passenger"|"driver"|"unclear"} yoki None (aniqlab bo'lmasa).
+    """
+    if _client is None:
+        return None
+
+    system_prompt = build_system_prompt()
+
     response = None
     max_attempts = 5
     for attempt in range(max_attempts):
         try:
             response = await _client.chat.completions.create(
-                model="gpt-4o",
+                model=OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f'Xabar: """{text}"""'},
