@@ -1,0 +1,11 @@
+.env
+venv/
+__pycache__/
+*.pyc
+drivers.json
+groups.json
+settings.json
+userbot_session.session
+userbot_session.session-journal
+ssh-key-2026-08-14.key
+ssh-key-2026-08-14.key.pub
