@@ -48,4 +48,5 @@ CITY_ALIASES = {
     "Toshkent": ["toshkent", "toskent", "tashkent", "tsh"],
     "Norin": ["norin", "naryn"],
     "Uchqo'rg'on": ["uchqo'rg'on", "uchqorgon", "uchqurgan", "uchqo'rg'on"],
+    "Namangan": ["namangan", "namanga"],
 }

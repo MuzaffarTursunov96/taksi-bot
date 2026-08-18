@@ -9,7 +9,7 @@ router = Router()
 
 
 def _is_admin(message: Message) -> bool:
-    return storage.is_admin(message.from_user.id)
+    return storage.is_founder(message.from_user.id)
 
 
 def _is_founder(message: Message) -> bool:
@@ -30,8 +30,11 @@ async def cmd_add_admin(message: Message) -> None:
 
     chat_id = int(parts[1].strip())
     if storage.add_admin_id(chat_id):
+        storage.add_driver_id(chat_id)  # xabarlarni olishi uchun shofyor sifatida ham qo'shamiz
         await commands.sync_admin_commands(message.bot, chat_id)
-        await message.reply(f"✅ {chat_id} adminlar ro'yxatiga qo'shildi.")
+        await message.reply(
+            f"✅ {chat_id} qo'shildi — u faqat xabarlarni oladi (boshqaruv menyusi yo'q)."
+        )
     else:
         await message.reply("Bu chat ID allaqachon admin.")
 
@@ -229,7 +232,7 @@ async def cmd_status(message: Message) -> None:
 
 @router.message(Command("menu", "yordam", "help"))
 async def cmd_menu(message: Message) -> None:
-    if not storage.is_admin(message.from_user.id):
+    if not storage.is_founder(message.from_user.id):
         await message.reply(
             "🤖 Bu bot yo'nalish e'lonlarini avtomatik kuzatib boradi.\n"
             "O'z chat ID'ingizni bilish uchun: <code>/mening_id</code>"

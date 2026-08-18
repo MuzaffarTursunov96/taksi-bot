@@ -54,7 +54,7 @@ class AdminInput(StatesGroup):
 
 
 def _is_admin(message: Message) -> bool:
-    return storage.is_admin(message.from_user.id)
+    return storage.is_founder(message.from_user.id)
 
 
 def _parse_chat_id(text: str) -> int | None:
@@ -225,7 +225,7 @@ async def _status_text() -> str:
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
-    if not storage.is_admin(message.from_user.id):
+    if not storage.is_founder(message.from_user.id):
         await message.reply(
             "🤖 Salom! Bu bot yo'nalish e'lonlarini avtomatik kuzatib boradi.\n"
             "O'z chat ID'ingizni bilish uchun: /mening_id"
@@ -274,7 +274,7 @@ async def cb_noop(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "bot:on")
 async def cb_bot_on(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     storage.set_processing_enabled(True)
     await callback.answer("Bot yoqildi ✅")
@@ -283,7 +283,7 @@ async def cb_bot_on(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "bot:off")
 async def cb_bot_off(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     storage.set_processing_enabled(False)
     await callback.answer("Bot o'chirildi ⏸")
@@ -292,7 +292,7 @@ async def cb_bot_off(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "ai:on")
 async def cb_ai_on(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     storage.set_ai_enabled(True)
     await callback.answer("AI tahlili yoqildi ✅")
@@ -301,7 +301,7 @@ async def cb_ai_on(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "ai:off")
 async def cb_ai_off(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     storage.set_ai_enabled(False)
     await callback.answer("AI tahlili o'chirildi ⏸")
@@ -310,7 +310,7 @@ async def cb_ai_off(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "group:menu")
 async def cb_group_menu(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     await callback.answer()
     await _safe_edit_text(callback.message, groups_menu_text(), groups_inline_keyboard())
@@ -318,7 +318,7 @@ async def cb_group_menu(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "group:list")
 async def cb_group_list(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     await callback.answer()
     await _safe_edit_text(
@@ -330,7 +330,7 @@ async def cb_group_list(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("group:view:"))
 async def cb_group_view(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     chat_id = int(callback.data.split(":")[2])
     fallback = storage.get_monitored_groups().get(chat_id, str(chat_id))
@@ -345,7 +345,7 @@ async def cb_group_view(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("group:disable:"))
 async def cb_group_disable(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     chat_id = int(callback.data.split(":")[2])
     storage.disable_group(chat_id)
@@ -359,7 +359,7 @@ async def cb_group_disable(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "group:mode_all")
 async def cb_group_mode_all(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     storage.set_group_mode("all")
     await callback.answer("Endi barcha guruhlar tinglanadi ✅")
@@ -368,7 +368,7 @@ async def cb_group_mode_all(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "group:mode_selected")
 async def cb_group_mode_selected(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     storage.set_group_mode("selected")
     await callback.answer("Endi faqat tanlangan guruhlar tinglanadi ✅")
@@ -377,7 +377,7 @@ async def cb_group_mode_selected(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("group:addpage:"))
 async def cb_group_addpage(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     page = int(callback.data.split(":")[2])
     await callback.answer()
@@ -390,7 +390,7 @@ async def cb_group_addpage(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("group:enable:"))
 async def cb_group_enable(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     parts = callback.data.split(":")
     chat_id = int(parts[2])
@@ -403,7 +403,7 @@ async def cb_group_enable(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "driver:list")
 async def cb_driver_list(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     driver_ids = storage.get_driver_ids()
     text = "\n".join(f"• <code>{chat_id}</code>" for chat_id in driver_ids) or "Ro'yxat bo'sh."
@@ -413,7 +413,7 @@ async def cb_driver_list(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "driver:add")
 async def cb_driver_add(callback: CallbackQuery, state: FSMContext) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     await state.set_state(AdminInput.driver_add)
     await callback.answer()
@@ -422,7 +422,7 @@ async def cb_driver_add(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "driver:remove")
 async def cb_driver_remove(callback: CallbackQuery, state: FSMContext) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     await state.set_state(AdminInput.driver_remove)
     await callback.answer()
@@ -431,7 +431,7 @@ async def cb_driver_remove(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "admin:list")
 async def cb_admin_list(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
+    if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     admin_ids = storage.get_admin_ids()
     text = "\n".join(f"• <code>{chat_id}</code>" for chat_id in admin_ids)
@@ -494,8 +494,11 @@ async def input_admin_add(message: Message, state: FSMContext) -> None:
         await message.reply("Noto'g'ri format. Faqat raqam yuboring.")
         return
     if storage.add_admin_id(chat_id):
+        storage.add_driver_id(chat_id)  # xabarlarni olishi uchun shofyor sifatida ham qo'shamiz
         await commands.sync_admin_commands(message.bot, chat_id)
-        await message.reply(f"✅ {chat_id} adminlar ro'yxatiga qo'shildi.")
+        await message.reply(
+            f"✅ {chat_id} qo'shildi — u faqat xabarlarni oladi (boshqaruv menyusi yo'q)."
+        )
     else:
         await message.reply("Bu chat ID allaqachon admin.")
 
