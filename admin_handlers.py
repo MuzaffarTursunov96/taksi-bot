@@ -9,11 +9,15 @@ router = Router()
 
 
 def _is_admin(message: Message) -> bool:
-    return storage.is_founder(message.from_user.id)
+    return storage.is_admin(message.from_user.id)
 
 
 def _is_founder(message: Message) -> bool:
     return storage.is_founder(message.from_user.id)
+
+
+def _is_root(message: Message) -> bool:
+    return storage.is_root(message.from_user.id)
 
 
 @router.message(Command("myid", "mening_id"))
@@ -181,7 +185,7 @@ async def cmd_listen_selected(message: Message) -> None:
     )
 
 
-@router.message(Command("pausebot", "botni_ochirish"), _is_admin)
+@router.message(Command("pausebot", "botni_ochirish"), _is_root)
 async def cmd_pause_bot(message: Message) -> None:
     storage.set_processing_enabled(False)
     await message.reply(
@@ -190,13 +194,13 @@ async def cmd_pause_bot(message: Message) -> None:
     )
 
 
-@router.message(Command("resumebot", "botni_yoqish"), _is_admin)
+@router.message(Command("resumebot", "botni_yoqish"), _is_root)
 async def cmd_resume_bot(message: Message) -> None:
     storage.set_processing_enabled(True)
     await message.reply("▶️ Bot yoqildi — xabarlar tekshirilmoqda.")
 
 
-@router.message(Command("aion", "chatgpt_yoqish"), _is_admin)
+@router.message(Command("aion", "chatgpt_yoqish"), _is_root)
 async def cmd_ai_on(message: Message) -> None:
     storage.set_ai_enabled(True)
     await message.reply(
@@ -205,7 +209,7 @@ async def cmd_ai_on(message: Message) -> None:
     )
 
 
-@router.message(Command("aioff", "chatgpt_ochirish"), _is_admin)
+@router.message(Command("aioff", "chatgpt_ochirish"), _is_root)
 async def cmd_ai_off(message: Message) -> None:
     storage.set_ai_enabled(False)
     await message.reply(
@@ -232,30 +236,38 @@ async def cmd_status(message: Message) -> None:
 
 @router.message(Command("menu", "yordam", "help"))
 async def cmd_menu(message: Message) -> None:
-    if not storage.is_founder(message.from_user.id):
+    if not storage.is_admin(message.from_user.id):
         await message.reply(
             "🤖 Bu bot yo'nalish e'lonlarini avtomatik kuzatib boradi.\n"
             "O'z chat ID'ingizni bilish uchun: <code>/mening_id</code>"
         )
         return
 
+    is_founder = storage.is_founder(message.from_user.id)
+
     admin_section = (
         "<b>👤 Adminlar</b>\n"
         "/admin_qoshish &lt;id&gt; — yangi admin qo'shish\n"
         "/admin_ochirish &lt;id&gt; — adminlikdan chiqarish\n"
         "/adminlar — adminlar ro'yxati\n\n"
-        if storage.is_founder(message.from_user.id)
+        if is_founder
         else ""
     )
 
-    text = (
-        "📋 <b>Barcha buyruqlar</b>\n\n"
+    bot_section = (
         "<b>🤖 Bot holati</b>\n"
         "/botni_yoqish — botni yoqish\n"
         "/botni_ochirish — botni o'chirish (hech narsa tekshirilmaydi)\n"
         "/chatgpt_yoqish — AI tahlilini yoqish\n"
         "/chatgpt_ochirish — AI tahlilini o'chirish (arzonroq, kamroq aniq)\n"
         "/holat — joriy holatni ko'rish\n\n"
+        if is_founder
+        else ""
+    )
+
+    text = (
+        "📋 <b>Barcha buyruqlar</b>\n\n"
+        f"{bot_section}"
         f"{admin_section}"
         "<b>👥 Guruhlar</b>\n"
         "/hamma_guruh — barcha guruhlarni tinglash rejimi\n"

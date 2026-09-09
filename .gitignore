@@ -16,3 +16,8 @@ finetune_train.jsonl
 finetune_valid.jsonl
 userbot_session_backfill.session
 userbot_session_backfill.session-journal
+linked_accounts.json
+notified_conflicts.json
+pending_requests.json
+telethon_*.session
+telethon_*.session-journal

@@ -158,8 +158,18 @@ async def process_text(
     caption = format_caption(route_info, sender_display, phone, context_text, group_name)
     keyboard = _build_keyboard(sender_username, group_link)
 
-    for driver_chat_id in driver_chat_ids:
+    delivery_mode = storage.get_delivery_mode()
+
+    if delivery_mode != "group_only":
+        for driver_chat_id in driver_chat_ids:
+            try:
+                await bot.send_message(driver_chat_id, caption, reply_markup=keyboard)
+            except Exception:
+                logger.exception("Shofyorga (%s) xabar yuborib bo'lmadi", driver_chat_id)
+
+    dispatch_group_id = storage.get_dispatch_group_id()
+    if delivery_mode != "private_only" and dispatch_group_id is not None:
         try:
-            await bot.send_message(driver_chat_id, caption, reply_markup=keyboard)
+            await bot.send_message(dispatch_group_id, caption, reply_markup=keyboard)
         except Exception:
-            logger.exception("Shofyorga (%s) xabar yuborib bo'lmadi", driver_chat_id)
+            logger.exception("Buyurtmalar guruhiga (%s) xabar yuborib bo'lmadi", dispatch_group_id)

@@ -34,6 +34,14 @@ INITIAL_MONITORED_GROUP_IDS = [
 # "selected" — faqat yuqoridagi MONITORED_GROUP_IDS (yoki /enablegroup orqali) yoqilganlarni.
 DEFAULT_GROUP_MODE = os.environ.get("GROUP_MODE", "all")
 
+# Botni yoqish/o'chirish va AI yoqish/o'chirishga faqat shu YAGONA shaxs ruxsatga ega
+# (qolgan asosiy adminlar boshqa hammasini boshqara oladi, lekin buni emas).
+ROOT_ADMIN_ID = (
+    int(os.environ["ROOT_ADMIN_ID"])
+    if os.environ.get("ROOT_ADMIN_ID")
+    else (INITIAL_ADMIN_IDS[0] if INITIAL_ADMIN_IDS else None)
+)
+
 # Faqat telethon_listener.py uchun kerak (my.telegram.org/apps dan olinadi).
 API_ID = int(os.environ["API_ID"]) if os.environ.get("API_ID") else None
 API_HASH = os.environ.get("API_HASH", "")
