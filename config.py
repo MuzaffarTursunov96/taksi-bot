@@ -46,6 +46,18 @@ ROOT_ADMIN_ID = (
 API_ID = int(os.environ["API_ID"]) if os.environ.get("API_ID") else None
 API_HASH = os.environ.get("API_HASH", "")
 
+# Yangi akkauntlarni ulashda urinishlarni bir nechta ilova orasida tarqatish uchun
+# qo'shimcha api_id/api_hash juftliklari (Telegram'ning shubha aniqlashini kamaytiradi).
+# .env'da: API_ID_2, API_HASH_2, API_ID_3, API_HASH_3 ...
+API_CREDENTIALS: list[tuple[int, str]] = []
+if API_ID and API_HASH:
+    API_CREDENTIALS.append((API_ID, API_HASH))
+for _i in range(2, 6):
+    _aid = os.environ.get(f"API_ID_{_i}")
+    _ahash = os.environ.get(f"API_HASH_{_i}")
+    if _aid and _ahash:
+        API_CREDENTIALS.append((int(_aid), _ahash))
+
 # Fine-tuning tugagach shu yerga fine-tuned model nomi yoziladi
 # (masalan: ft:gpt-4o-mini-2024-07-18:...). Bo'sh bo'lsa, standart model ishlatiladi.
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")

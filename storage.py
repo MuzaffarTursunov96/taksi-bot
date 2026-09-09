@@ -124,19 +124,9 @@ def _save_settings(settings: dict) -> None:
     _SETTINGS_PATH.write_text(json.dumps(settings), encoding="utf-8")
 
 
-def get_group_mode() -> str:
-    return _load_settings().get("group_mode", "all")
-
-
-def set_group_mode(mode: str) -> None:
-    settings = _load_settings()
-    settings["group_mode"] = mode
-    _save_settings(settings)
-
-
 def is_group_monitored(chat_id: int) -> bool:
-    if get_group_mode() == "all":
-        return True
+    """Bot faqat qo'lda yoqilgan (tanlangan) guruhlarni tinglaydi — "hammasi" rejimi
+    butunlay olib tashlandi."""
     return str(chat_id) in _load_groups()
 
 
@@ -355,13 +345,25 @@ def _save_accounts(accounts: dict[str, dict]) -> None:
 
 
 def get_linked_accounts() -> dict[int, dict]:
-    """{owner_user_id: {"session": str, "phone": str}} — ulangan Telethon akkauntlari."""
+    """{owner_user_id: {"session": str, "phone": str, "api_id": int|None,
+    "api_hash": str|None}} — ulangan Telethon akkauntlari."""
     return {int(owner_id): info for owner_id, info in _load_accounts().items()}
 
 
-def add_linked_account(owner_id: int, session_name: str, phone: str) -> None:
+def add_linked_account(
+    owner_id: int,
+    session_name: str,
+    phone: str,
+    api_id: int | None = None,
+    api_hash: str | None = None,
+) -> None:
     accounts = _load_accounts()
-    accounts[str(owner_id)] = {"session": session_name, "phone": phone}
+    accounts[str(owner_id)] = {
+        "session": session_name,
+        "phone": phone,
+        "api_id": api_id,
+        "api_hash": api_hash,
+    }
     _save_accounts(accounts)
 
 

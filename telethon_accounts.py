@@ -123,7 +123,9 @@ async def load_all_accounts(bot: Bot) -> None:
     """Saqlangan barcha akkauntlarni ulaydi (server qayta ishga tushganda)."""
     for owner_id, info in storage.get_linked_accounts().items():
         try:
-            client = TelegramClient(info["session"], API_ID, API_HASH)
+            account_api_id = info.get("api_id") or API_ID
+            account_api_hash = info.get("api_hash") or API_HASH
+            client = TelegramClient(info["session"], account_api_id, account_api_hash)
             await client.connect()
             if not await client.is_user_authorized():
                 logger.warning("Akkaunt (%s) sessiyasi yaroqsiz, o'tkazib yuboriladi", owner_id)

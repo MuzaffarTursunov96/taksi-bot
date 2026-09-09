@@ -84,9 +84,15 @@ def build_system_prompt() -> str:
         "MUHIM: ko'plik fe'lining o'zi ({biz ketamiz}, {2 kishimiz}, {boramiz}) — bu "
         "SHOFYOR belgisi EMAS! Bir nechta do'st/qarindosh birga ketishi mumkin — bu ham "
         "yo'lovchi. Faqat mashina/avto markasi, \"olamiz\" (boshqalarni olib ketish), "
-        "\"N kishi/joy KERAK\", \"N ta KAMDAMIZ/KAMMIZ\" (mashinada N ta bo'sh joy qolgani) "
-        "yoki \"...ICHIDAMIZ\"/\"...DAMIZ\" (o'zi hozir o'sha shaharda, mashina bilan "
-        "turibdi) bo'lsagina driver deb belgila.\n\n"
+        "\"N kishi/joy KERAK\", \"N ta KAMDAMIZ/KAMMIZ\"/\"N ta odam/kishi KAM\" "
+        "(istalgan formatda — mashinada N ta bo'sh joy qolgani, N kishi yetishmayapti), "
+        "yoki har QANDAY joy nomi + \"...DAMIZ\"/\"...MIZ\" qo'shimchasi (masalan "
+        "\"Qoplonbekdamiz\", \"Toshkentdamiz\" — hatto shahar ro'yxatida yo'q joy nomi "
+        "bo'lsa ham, bu \"o'zi hozir o'sha yerda, mashina bilan turibdi\" degani) "
+        "bo'lsagina driver deb belgila.\n\n"
+        "ESLATMA: \"1 ta odam kam\", \"2 ta odam kam\", \"N kishi kam\" — bularning barchasi "
+        "\"N ta KAM\" bilan bir xil ma'noda (mashinada N ta bo'sh joy bor, to'ldirish kerak) "
+        "— SHOFYOR belgisi, garchi \"kam\" so'zidan keyin \"damiz\" qo'shimchasi bo'lmasa ham.\n\n"
         "Misollar:\n"
         "Xabar: \"2 KISHI KERAK AYOLA BOR TEL.999976222\"\n"
         'Javob: {"is_route": true, "author_role": "driver"} '
@@ -112,6 +118,15 @@ def build_system_prompt() -> str:
         "(sabab: \"odam bor\" — biror kishi ketishga ehtiyoji borligini bildiryapti, "
         "\"olamiz\"/mashina/\"kerak\" so'zi yo'q, shuning uchun bu SHOFYOR emas — "
         "\"joy/odam bor\" so'zi yolg'iz holda, \"olamiz\"siz, driver belgisi emas)\n\n"
+        "Xabar: \"Qoplonbekdamiz uchqorgon norin qogayga yuramiz ketadiganla aloqaga chiqina\"\n"
+        'Javob: {"is_route": true, "author_role": "driver"} '
+        "(sabab: \"Qoplonbekdamiz\" — joy nomi + \"damiz\", ro'yxatdagi shahar bo'lmasa ham "
+        "shofyor belgisi; \"ketadiganlar aloqaga chiqsin\" — reklama chaqirig'i)\n\n"
+        "Xabar: \"Norindan Toshkentga ertaga ertalab 06:00 da yuramiz 1 ta odam kam ayol "
+        "kishi bor 930589595\"\n"
+        'Javob: {"is_route": true, "author_role": "driver"} '
+        "(sabab: \"1 ta odam kam\" — mashinada 1 ta bo'sh joy qolgani, \"ayol kishi bor\" "
+        "— mavjud yo'lovchi haqida gender eslatmasi, ikkalasi ham shofyor belgisi)\n\n"
         "Faqat quyidagi JSON formatida javob ber, boshqa hech narsa yozma:\n"
         '{"is_route": true/false, "from": "shahar nomi yoki null", '
         '"to": "shahar nomi yoki null", "phone": "topilgan telefon raqami yoki null", '

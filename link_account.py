@@ -2,11 +2,17 @@
 orqali) ulashi uchun FSM oqimi."""
 
 import logging
+import random
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message
+from aiogram.types import (
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
 from telethon import TelegramClient
 from telethon.errors import (
     PhoneCodeInvalidError,
@@ -14,7 +20,7 @@ from telethon.errors import (
     SessionPasswordNeededError,
 )
 
-from config import API_HASH, API_ID
+from config import API_CREDENTIALS, API_HASH, API_ID
 import storage
 import telethon_accounts
 
@@ -48,11 +54,22 @@ async def _notify_founders(bot, text: str) -> None:
                 logger.exception("Founder (%s)ga xabar yuborib bo'lmadi", admin_id)
 
 
+def _contact_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📱 Kontaktni ulashish", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
 async def begin_link_flow(message: Message, state: FSMContext) -> None:
     await state.set_state(LinkAccount.phone)
     await message.answer(
         "📱 Guruhlaringizni qo'shish uchun avval akkauntingizni ulash kerak.\n\n"
-        "Telefon raqamingizni xalqaro formatda yuboring (masalan: +998901234567):"
+        "Pastdagi tugmani bosib kontaktingizni ulashing (eng ishonchli usul), "
+        "yoki telefon raqamingizni xalqaro formatda qo'lda yozing "
+        "(masalan: +998901234567):",
+        reply_markup=_contact_keyboard(),
     )
 
 
@@ -61,31 +78,63 @@ async def start_link(message: Message, state: FSMContext) -> None:
     await begin_link_flow(message, state)
 
 
-@router.message(LinkAccount.phone)
-async def got_phone(message: Message, state: FSMContext) -> None:
-    phone = message.text.strip()
+@router.message(LinkAccount.phone, F.contact)
+async def got_phone_contact(message: Message, state: FSMContext) -> None:
+    phone = message.contact.phone_number
+    if not phone.startswith("+"):
+        phone = f"+{phone}"
+    await _request_code(message, state, phone)
+
+
+@router.message(LinkAccount.phone, F.text)
+async def got_phone_text(message: Message, state: FSMContext) -> None:
+    await _request_code(message, state, message.text.strip())
+
+
+def _pick_credentials() -> tuple[int, str]:
+    """Yangi ulanish urinishlari uchun mavjud ilovalardan birini tasodifiy tanlaydi —
+    bitta ilovaga barcha urinishlar tushib, Telegram shubhalanib qolmasligi uchun."""
+    if API_CREDENTIALS:
+        return random.choice(API_CREDENTIALS)
+    return API_ID, API_HASH
+
+
+async def _request_code(message: Message, state: FSMContext, phone: str) -> None:
     user_id = message.from_user.id
 
-    client = TelegramClient(f"telethon_{user_id}", API_ID, API_HASH)
+    account_api_id, account_api_hash = _pick_credentials()
+    client = TelegramClient(f"telethon_{user_id}", account_api_id, account_api_hash)
     await client.connect()
     try:
-        sent = await client.send_code_request(phone)
+        sent = await client.send_code_request(phone, force_sms=True)
     except PhoneNumberInvalidError:
-        await message.reply("❌ Telefon raqami noto'g'ri formatda. Qaytadan urinib ko'ring.")
+        await message.reply(
+            "❌ Telefon raqami noto'g'ri formatda. Qaytadan urinib ko'ring.",
+            reply_markup=_contact_keyboard(),
+        )
         await client.disconnect()
-        await state.clear()
         return
     except Exception as e:
-        await message.reply(f"❌ Xato: {e}")
+        await message.reply(f"❌ Xato: {e}", reply_markup=ReplyKeyboardRemove())
         await client.disconnect()
         await state.clear()
         return
 
-    _pending[user_id] = {"client": client, "phone": phone, "hash": sent.phone_code_hash}
+    _pending[user_id] = {
+        "client": client,
+        "phone": phone,
+        "hash": sent.phone_code_hash,
+        "api_id": account_api_id,
+        "api_hash": account_api_hash,
+    }
     await state.set_state(LinkAccount.code)
     await message.answer(
-        "📩 Telegram ilovangizga tasdiqlash kodi keldi. Shu kodni shu yerga yuboring "
-        "(raqamlar orasiga bo'shliq qo'shmang)."
+        "📩 Tasdiqlash kodi SMS orqali (yoki agar allaqachon Telegram'da faol bo'lsangiz, "
+        "\"Telegram\" rasmiy xizmat chatiga) yuborildi. Shu kodni shu yerga yuboring "
+        "(raqamlar orasiga bo'shliq qo'shmang).\n\n"
+        "Kod kelmasa, 2-3 daqiqa kutib ko'ring. Hali ham kelmasa — /start bosib, "
+        "qaytadan urinib ko'ring.",
+        reply_markup=ReplyKeyboardRemove(),
     )
 
 
@@ -151,7 +200,9 @@ async def _finish_link(message: Message, state: FSMContext) -> None:
     phone = pending["phone"]
     session_name = f"telethon_{user_id}"
 
-    storage.add_linked_account(user_id, session_name, phone)
+    storage.add_linked_account(
+        user_id, session_name, phone, pending["api_id"], pending["api_hash"]
+    )
     await telethon_accounts.register_client(user_id, client, message.bot)
     await state.clear()
 

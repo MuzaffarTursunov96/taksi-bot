@@ -126,17 +126,9 @@ def _group_display_name(chat_id: int, fallback: str) -> str:
 
 
 def groups_menu_text() -> str:
-    mode = storage.get_group_mode()
-    if mode == "all":
-        return (
-            "👥 <b>Guruhlar boshqaruvi</b>\n\n"
-            "🌐 Joriy rejim: <b>BARCHA GURUHLAR</b>\n"
-            "Bot a'zo bo'lgan <b>har qanday</b> guruhdagi xabarlarni tekshiradi."
-        )
     return (
         "👥 <b>Guruhlar boshqaruvi</b>\n\n"
-        "🎯 Joriy rejim: <b>FAQAT TANLANGANLAR</b>\n"
-        "Bot faqat pastdagi \"Tinglanayotganlar\" ro'yxatidagi guruhlarni tekshiradi, "
+        "🎯 Bot faqat pastdagi \"Tinglanayotganlar\" ro'yxatidagi guruhlarni tekshiradi, "
         "qolganlarini e'tiborsiz qoldiradi."
     )
 
@@ -144,10 +136,6 @@ def groups_menu_text() -> str:
 def groups_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🌐 Barchasini tinglash", callback_data="group:mode_all"),
-                InlineKeyboardButton(text="🎯 Faqat tanlanganlarni", callback_data="group:mode_selected"),
-            ],
             [InlineKeyboardButton(text="📋 Tinglanayotganlar", callback_data="group:list")],
             [InlineKeyboardButton(text="➕ Guruh qo'shish", callback_data="group:addpage:0")],
         ]
@@ -343,11 +331,10 @@ def dispatch_pick_keyboard(page: int) -> InlineKeyboardMarkup:
 async def _status_text() -> str:
     bot_state = "▶️ YOQILGAN" if storage.is_processing_enabled() else "⏸ O'CHIRILGAN"
     ai_state = "▶️ YOQILGAN" if storage.is_ai_enabled() else "⏸ O'CHIRILGAN"
-    mode_state = "🌐 HAMMASI" if storage.get_group_mode() == "all" else "🎯 TANLANGAN"
     return (
         f"🤖 Bot: <b>{bot_state}</b>\n"
         f"🧠 ChatGPT tahlili: <b>{ai_state}</b>\n"
-        f"👥 Guruh rejimi: <b>{mode_state}</b>"
+        f"👥 Guruh rejimi: <b>🎯 TANLANGAN (doim)</b>"
     )
 
 
@@ -361,7 +348,6 @@ def _driver_reply_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-@router.message(Command("start"))
 async def _is_member_of(bot, chat_id: int, user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(chat_id, user_id)
@@ -390,6 +376,7 @@ async def _notify_admins_new_person(message: Message) -> None:
             logger.exception("Admin (%s)ga yangi odam haqida xabar yuborib bo'lmadi", admin_id)
 
 
+@router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     user_id = message.from_user.id
@@ -716,24 +703,6 @@ async def cb_group_disable(callback: CallbackQuery) -> None:
         "📋 Tinglanayotgan guruhlar (to'xtatish uchun bosing):",
         monitored_groups_keyboard(),
     )
-
-
-@router.callback_query(F.data == "group:mode_all")
-async def cb_group_mode_all(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
-        return await callback.answer()
-    storage.set_group_mode("all")
-    await callback.answer("Endi barcha guruhlar tinglanadi ✅")
-    await _safe_edit_text(callback.message, groups_menu_text(), groups_inline_keyboard())
-
-
-@router.callback_query(F.data == "group:mode_selected")
-async def cb_group_mode_selected(callback: CallbackQuery) -> None:
-    if not storage.is_admin(callback.from_user.id):
-        return await callback.answer()
-    storage.set_group_mode("selected")
-    await callback.answer("Endi faqat tanlangan guruhlar tinglanadi ✅")
-    await _safe_edit_text(callback.message, groups_menu_text(), groups_inline_keyboard())
 
 
 @router.callback_query(F.data.startswith("group:addpage:"))
