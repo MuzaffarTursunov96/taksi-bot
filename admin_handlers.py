@@ -52,6 +52,7 @@ async def cmd_remove_admin(message: Message) -> None:
 
     chat_id = int(parts[1].strip())
     if storage.remove_admin_id(chat_id):
+        storage.remove_driver_id(chat_id)  # yo'lovchi xabarlarini olmasin
         try:
             await message.bot.delete_my_commands(scope=BotCommandScopeChat(chat_id=chat_id))
         except Exception:

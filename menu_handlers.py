@@ -16,6 +16,7 @@ from aiogram.types import (
 )
 
 import commands
+import telethon_accounts
 import link_account
 from link_account import BTN_LINK_ACCOUNT
 import storage
@@ -219,6 +220,7 @@ def admins_inline_keyboard() -> InlineKeyboardMarkup:
             ],
             [InlineKeyboardButton(text="📢 Buyurtmalar guruhi", callback_data="dispatch:menu")],
             [InlineKeyboardButton(text="🚪 Tekshiruv guruhi", callback_data="verify:menu")],
+            [InlineKeyboardButton(text="🔌 Ulangan akkauntlar", callback_data="accounts:status")],
         ]
     )
 
@@ -769,8 +771,17 @@ async def cb_admin_list(callback: CallbackQuery) -> None:
     if not storage.is_founder(callback.from_user.id):
         return await callback.answer()
     admin_ids = storage.get_admin_ids()
-    text = "\n".join(f"• <code>{chat_id}</code>" for chat_id in admin_ids)
     await callback.answer()
+
+    lines = []
+    for chat_id in admin_ids:
+        try:
+            chat = await callback.bot.get_chat(chat_id)
+            name = chat.full_name or (f"@{chat.username}" if chat.username else None) or "Noma'lum"
+        except Exception:
+            name = "Noma'lum"
+        lines.append(f"• {name} — <code>{chat_id}</code>")
+    text = "\n".join(lines) or "Ro'yxat bo'sh."
     await callback.message.answer(f"Adminlar:\n{text}")
 
 
@@ -798,6 +809,29 @@ async def cb_admin_menu(callback: CallbackQuery) -> None:
         return await callback.answer()
     await callback.answer()
     await _safe_edit_text(callback.message, "👤 Adminlar boshqaruvi:", admins_inline_keyboard())
+
+
+@router.callback_query(F.data == "accounts:status")
+async def cb_accounts_status(callback: CallbackQuery) -> None:
+    if not storage.is_founder(callback.from_user.id):
+        return await callback.answer()
+    await callback.answer()
+
+    linked = storage.get_linked_accounts()
+    active_ids = set(telethon_accounts.get_active_owner_ids())
+
+    if not linked:
+        text = "🔌 Hozircha hech kim akkaunt ulamagan."
+    else:
+        lines = ["🔌 Ulangan akkauntlar:\n"]
+        for owner_id, info in linked.items():
+            status = "🟢 Faol" if owner_id in active_ids else "🔴 Ulanmagan"
+            phone = info.get("phone", "?")
+            lines.append(f"{status} — <code>{owner_id}</code> ({phone})")
+        text = "\n".join(lines)
+
+    rows = [[InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin:menu")]]
+    await _safe_edit_text(callback.message, text, InlineKeyboardMarkup(inline_keyboard=rows))
 
 
 @router.callback_query(F.data == "dispatch:menu")
@@ -961,6 +995,7 @@ async def input_admin_remove(message: Message, state: FSMContext) -> None:
         await message.reply("Noto'g'ri format. Faqat raqam yuboring.")
         return
     if storage.remove_admin_id(chat_id):
+        storage.remove_driver_id(chat_id)  # yo'lovchi xabarlarini olmasin
         try:
             await message.bot.delete_my_commands(scope=BotCommandScopeChat(chat_id=chat_id))
         except Exception:
