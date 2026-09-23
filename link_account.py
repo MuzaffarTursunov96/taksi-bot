@@ -102,9 +102,27 @@ def _pick_credentials() -> tuple[int, str]:
 async def _request_code(message: Message, state: FSMContext, phone: str) -> None:
     user_id = message.from_user.id
 
+    # Agar shu foydalanuvchi uchun tugallanmagan avvalgi urinish hali ulangan holda
+    # qolib ketgan bo'lsa — uni yopamiz. Aks holda bitta telefon raqamiga ikkita
+    # parallel Telethon ulanishi ketadi va Telegram buni shubhali deb hisoblab,
+    # ikkalasining kodini ham darhol bekor qiladi ("expired" xatosi shundan kelib chiqadi).
+    old_pending = _pending.pop(user_id, None)
+    if old_pending is not None:
+        try:
+            await old_pending["client"].disconnect()
+        except Exception:
+            pass
+        logger.info(
+            "Eski tugallanmagan link urinishi tozalandi: user=%s, telefon=%s",
+            user_id, old_pending.get("phone"),
+        )
+
     account_api_id, account_api_hash = _pick_credentials()
     client = TelegramClient(f"telethon_{user_id}", account_api_id, account_api_hash)
     await client.connect()
+    logger.info(
+        "Kod so'ralmoqda: user=%s, telefon=%s, api_id=%s", user_id, phone, account_api_id
+    )
     try:
         sent = await client.send_code_request(phone, force_sms=True)
     except PhoneNumberInvalidError:

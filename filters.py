@@ -4,7 +4,7 @@ import re
 import time
 from pathlib import Path
 
-from openai import AsyncOpenAI, APIStatusError, RateLimitError
+from openai import APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
 
 from config import CITY_ALIASES, OPENAI_API_KEY, OPENAI_MODEL
 
@@ -177,6 +177,12 @@ async def classify_route(text: str) -> dict | None:
             if _is_quota_exhausted(e):
                 raise OpenAIQuotaExceeded(str(e)) from e
             raise
+        except APITimeoutError:
+            if attempt == max_attempts - 1:
+                # Bir necha marta urinib ko'rdik, hali ham javob kelmadi —
+                # hozircha bu xabarni o'tkazib yuboramiz (dastur qulab tushmasin).
+                return None
+            await asyncio.sleep(2 * (attempt + 1))
 
     try:
         result = json.loads(response.choices[0].message.content)

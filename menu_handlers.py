@@ -825,9 +825,20 @@ async def cb_accounts_status(callback: CallbackQuery) -> None:
     else:
         lines = ["🔌 Ulangan akkauntlar:\n"]
         for owner_id, info in linked.items():
-            status = "🟢 Faol" if owner_id in active_ids else "🔴 Ulanmagan"
+            is_active = owner_id in active_ids
+            status = "🟢 Faol" if is_active else "🔴 Ulanmagan"
             phone = info.get("phone", "?")
-            lines.append(f"{status} — <code>{owner_id}</code> ({phone})")
+            real_phone = ""
+            if is_active:
+                client = telethon_accounts.get_active_client(owner_id)
+                if client is not None:
+                    try:
+                        me = await client.get_me()
+                        if me and me.phone:
+                            real_phone = f" — haqiqiy raqam: +{me.phone}"
+                    except Exception:
+                        pass
+            lines.append(f"{status} — <code>{owner_id}</code> ({phone}){real_phone}")
         text = "\n".join(lines)
 
     rows = [[InlineKeyboardButton(text="🔙 Orqaga", callback_data="admin:menu")]]

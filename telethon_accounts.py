@@ -68,18 +68,21 @@ def attach_handlers(client: TelegramClient, bot: Bot) -> None:
         if not event.raw_text:
             return
 
-        await process_text(
-            bot=bot,
-            driver_chat_ids=storage.get_driver_ids(),
-            chat_id=event.chat_id,
-            user_id=sender.id,
-            text=event.raw_text,
-            sender_display=_sender_display(sender),
-            sender_username=getattr(sender, "username", None),
-            group_name=getattr(chat, "title", None),
-            group_username=getattr(chat, "username", None),
-            message_id=event.id,
-        )
+        try:
+            await process_text(
+                bot=bot,
+                driver_chat_ids=storage.get_driver_ids(),
+                chat_id=event.chat_id,
+                user_id=sender.id,
+                text=event.raw_text,
+                sender_display=_sender_display(sender),
+                sender_username=getattr(sender, "username", None),
+                group_name=getattr(chat, "title", None),
+                group_username=getattr(chat, "username", None),
+                message_id=event.id,
+            )
+        except Exception:
+            logger.exception("Xabarni qayta ishlashda xato (chat=%s)", event.chat_id)
 
 
 async def _notify_group_conflict(bot: Bot, viewer_id: int, chat_id: int, title: str) -> None:
@@ -149,3 +152,7 @@ async def periodic_rescan(bot: Bot) -> None:
 
 def get_active_owner_ids() -> list[int]:
     return list(_active_clients.keys())
+
+
+def get_active_client(owner_id: int) -> TelegramClient | None:
+    return _active_clients.get(owner_id)
