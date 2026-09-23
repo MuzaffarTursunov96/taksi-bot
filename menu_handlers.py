@@ -127,10 +127,12 @@ def _group_display_name(chat_id: int, fallback: str) -> str:
 
 
 def groups_menu_text() -> str:
+    groups_count = len(storage.get_monitored_groups())
     return (
         "👥 <b>Guruhlar boshqaruvi</b>\n\n"
         "🎯 Bot faqat pastdagi \"Tinglanayotganlar\" ro'yxatidagi guruhlarni tekshiradi, "
-        "qolganlarini e'tiborsiz qoldiradi."
+        "qolganlarini e'tiborsiz qoldiradi.\n\n"
+        f"📋 Hozir tinglanayotgan guruhlar soni: <b>{groups_count}</b>"
     )
 
 
@@ -333,10 +335,12 @@ def dispatch_pick_keyboard(page: int) -> InlineKeyboardMarkup:
 async def _status_text() -> str:
     bot_state = "▶️ YOQILGAN" if storage.is_processing_enabled() else "⏸ O'CHIRILGAN"
     ai_state = "▶️ YOQILGAN" if storage.is_ai_enabled() else "⏸ O'CHIRILGAN"
+    groups_count = len(storage.get_monitored_groups())
     return (
         f"🤖 Bot: <b>{bot_state}</b>\n"
         f"🧠 ChatGPT tahlili: <b>{ai_state}</b>\n"
-        f"👥 Guruh rejimi: <b>🎯 TANLANGAN (doim)</b>"
+        f"👥 Guruh rejimi: <b>🎯 TANLANGAN (doim)</b>\n"
+        f"📋 Tinglanayotgan guruhlar soni: <b>{groups_count}</b>"
     )
 
 

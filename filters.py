@@ -62,6 +62,63 @@ def quick_prefilter(text: str) -> bool:
     )
 
 
+# Mashina markasi nomi tilga olingan xabar deyarli har doim SHOFYOR e'loni bo'ladi
+# (haydovchi o'z mashinasini tasvirlaydi) — bunday holatlarda OpenAI'ga
+# yuborilmasdan, xarajatni tejash uchun to'g'ridan-to'g'ri "shofyor" deb hisoblanadi.
+_CAR_BRAND_RE = re.compile(
+    r"\b(cobalt|kobalt|nexia|damas|malibu|spark|gentra|jentra|lachetti|lacetti|onix|"
+    r"tracker|captiva|matiz|largus|haval|sonet|soneti|orlando|aveo|tico|labo)\b",
+    re.IGNORECASE,
+)
+
+# "Konditsioner bor" — mashinada konditsioner borligini aytish, faqat haydovchiga
+# xos tavsif (turli yozilish shakllari bilan).
+_CAR_FEATURE_RE = re.compile(
+    r"\b(konditsioner|kondisioner|kanditsaner|kondicioner|kondishiner|konditsaner)\b",
+    re.IGNORECASE,
+)
+
+
+# "odam olamiz"/"pochta olamiz"/"odam pochta olib ketamiz" (va variantlari: olamz,
+# olaman, oladi, olib, kirill оламиз/оламз/оламан/олади) — "boshqalarni olib
+# ketish" ma'nosida, bu ham ishonchli shofyor belgisi. Ikkalasi ham (odam/pochta
+# so'zi + "ol" fe'li) borligida hisobga olinadi, yolg'iz "oladi" kabi so'z
+# tasodifan boshqa ma'noda kelmasligi uchun.
+_TAKE_WORD_RE = re.compile(r"\b(odam|pochta|одам|почта)\b", re.IGNORECASE)
+_OLA_VERB_RE = re.compile(
+    r"\b(olamiz|olamz|olaman|oladi|olib|olindi|оламиз|оламз|оламан|олади|олиб|олинди)\b",
+    re.IGNORECASE,
+)
+
+
+def is_obvious_driver_ad(text: str) -> bool:
+    """Mashina markasi, yoki "odam/pochta olamiz" kabi ibora tilga olingan xabar —
+    juda ishonchli shofyor belgisi, shuning uchun bunday xabarlarni AI'ga
+    yubormasdan darhol shofyor deb hisoblab o'tkazib yuboramiz (xarajatni tejash)."""
+    if not text:
+        return False
+    if _CAR_BRAND_RE.search(text) or _CAR_FEATURE_RE.search(text):
+        return True
+    return bool(_TAKE_WORD_RE.search(text) and _OLA_VERB_RE.search(text))
+
+
+def group_default_route(group_name: str | None) -> tuple[str, str] | None:
+    """Agar guruh nomining o'zida ikkita alohida shahar nomi bo'lsa (masalan
+    "TOSHKENT<>NORIN"), bu guruh doimiy ravishda shu ikki shahar orasidagi
+    yo'nalish uchun ishlatiladi deb hisoblaymiz — a'zolar ko'pincha xabarda
+    shahar nomini qayta yozib o'tirmaydi (masalan "1ta odam bor")."""
+    if not group_name:
+        return None
+    lowered = group_name.lower()
+    found: list[str] = []
+    for canonical, aliases in CITY_ALIASES.items():
+        if any(alias in lowered for alias in aliases) and canonical not in found:
+            found.append(canonical)
+    if len(found) == 2:
+        return found[0], found[1]
+    return None
+
+
 def extract_phone(text: str) -> str | None:
     match = PHONE_RE.search(text or "")
     return match.group(0) if match else None
@@ -93,6 +150,10 @@ def build_system_prompt() -> str:
         "ESLATMA: \"1 ta odam kam\", \"2 ta odam kam\", \"N kishi kam\" — bularning barchasi "
         "\"N ta KAM\" bilan bir xil ma'noda (mashinada N ta bo'sh joy bor, to'ldirish kerak) "
         "— SHOFYOR belgisi, garchi \"kam\" so'zidan keyin \"damiz\" qo'shimchasi bo'lmasa ham.\n\n"
+        "ESLATMA: birinchi shaxsda \"hozir yuraman\"/\"yuryapman\"/\"ketyapman\" (hozir yo'lga "
+        "chiqyapti/yo'lda) + yo'lovchi chaqirig'i (\"odam bo'lsa yozilsin/yozsin\", \"yo'lda "
+        "odam bo'lsa aytilsin\") — bu ham SHOFYOR belgisi, mashina/avto so'zi aytilmasa ham, "
+        "chunki faqat mashinadagi odam boshqalarni \"yo'lda olib ketishi\" mumkin.\n\n"
         "Misollar:\n"
         "Xabar: \"2 KISHI KERAK AYOLA BOR TEL.999976222\"\n"
         'Javob: {"is_route": true, "author_role": "driver"} '
@@ -127,6 +188,10 @@ def build_system_prompt() -> str:
         'Javob: {"is_route": true, "author_role": "driver"} '
         "(sabab: \"1 ta odam kam\" — mashinada 1 ta bo'sh joy qolgani, \"ayol kishi bor\" "
         "— mavjud yo'lovchi haqida gender eslatmasi, ikkalasi ham shofyor belgisi)\n\n"
+        "Xabar: \"Namangandan toshkenga hozir yuraman pa puti odam bosa yozila\"\n"
+        'Javob: {"is_route": true, "author_role": "driver"} '
+        "(sabab: \"hozir yuraman\" — o'zi hozir yo'lga chiqyapti; \"po'tida odam bo'lsa "
+        "yozilsin\" — yo'lda yo'lovchi chaqirig'i, bu shofyor e'loni)\n\n"
         "Faqat quyidagi JSON formatida javob ber, boshqa hech narsa yozma:\n"
         '{"is_route": true/false, "from": "shahar nomi yoki null", '
         '"to": "shahar nomi yoki null", "phone": "topilgan telefon raqami yoki null", '

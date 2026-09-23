@@ -1,3 +1,4 @@
+import html
 import logging
 import time
 
@@ -5,7 +6,14 @@ from aiogram import Bot
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 import storage
-from filters import OpenAIQuotaExceeded, classify_route, extract_phone, quick_prefilter
+from filters import (
+    OpenAIQuotaExceeded,
+    classify_route,
+    extract_phone,
+    group_default_route,
+    is_obvious_driver_ad,
+    quick_prefilter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +47,26 @@ async def _notify_admins_quota_exceeded(bot: Bot) -> None:
 _RECENT_TTL_SECONDS = 10 * 60
 _recent_messages: dict[tuple[int, int], tuple[str, float]] = {}
 
+# Bitta guruhni bir nechta ulangan akkaunt bir vaqtda tinglashi mumkin (masalan,
+# ikkita shofyor bir xil guruhga a'zo) — bunday holda xuddi shu xabar ikki marta
+# qayta ishlanmasligi uchun (chat_id, message_id) bo'yicha dublikatni tekshiramiz.
+_DEDUP_TTL_SECONDS = 10 * 60
+_processed_messages: dict[tuple[int, int], float] = {}
+
+
+def _already_processed(chat_id: int, message_id: int | None) -> bool:
+    if message_id is None:
+        return False
+    now = time.monotonic()
+    for key, ts in list(_processed_messages.items()):
+        if now - ts > _DEDUP_TTL_SECONDS:
+            del _processed_messages[key]
+    key = (chat_id, message_id)
+    if key in _processed_messages:
+        return True
+    _processed_messages[key] = now
+    return False
+
 
 def build_context(chat_id: int, user_id: int, text: str) -> str:
     key = (chat_id, user_id)
@@ -71,8 +99,12 @@ def format_caption(
     matched_text: str,
     group_name: str | None = None,
 ) -> str:
-    from_city = route_info.get("from") or "?"
-    to_city = route_info.get("to") or "?"
+    # Diqqat: bu qiymatlar (shahar, telefon, guruh nomi, xabar matni) foydalanuvchi
+    # yozgan yoki guruh nomidan olingan xom matn — HTML'dan xavfsiz "escape" qilinishi
+    # shart, aks holda "<", ">", "&" belgilari borligida Telegram butun xabarni rad etadi
+    # (masalan guruh nomida "TOSHKENT<>NORIN" bo'lsa).
+    from_city = html.escape(route_info.get("from") or "?")
+    to_city = html.escape(route_info.get("to") or "?")
     role_labels = {"passenger": "🧑 Yo'lovchi", "driver": "🚕 Shofyor", "unclear": "❔ Noaniq"}
     role_label = role_labels.get(route_info.get("author_role"), "❔ Noaniq")
 
@@ -83,9 +115,10 @@ def format_caption(
         f"{role_label}: {sender_display}",
     ]
     if phone:
-        lines.append(f"📞 Telefon: <code>{phone}</code>")
+        lines.append(f"📞 Telefon: <code>{html.escape(phone)}</code>")
     if group_name:
-        lines.append(f"👥 Guruh: {group_name}")
+        lines.append(f"👥 Guruh: {html.escape(group_name)}")
+    matched_text = html.escape(matched_text)
     lines += [
         "━━━━━━━━━━━━━━",
         "💬 Xabar matni:",
@@ -128,23 +161,43 @@ async def process_text(
     if not storage.is_processing_enabled():
         return
 
-    if not quick_prefilter(text):
+    if _already_processed(chat_id, message_id):
+        return
+
+    default_route = group_default_route(group_name)
+
+    if not quick_prefilter(text) and default_route is None:
         return
 
     context_text = build_context(chat_id, user_id, text)
 
+    if is_obvious_driver_ad(context_text):
+        # Mashina markasi tilga olingan — juda ishonchli shofyor belgisi, OpenAI'ga
+        # yubormasdan (xarajatni tejash) darhol o'tkazib yuboramiz.
+        return
+
     if not storage.is_ai_enabled():
         # AI o'chirilgan — tasniflashsiz, faqat shahar nomi topilgan xabarlarni
         # to'g'ridan-to'g'ri forward qilamiz (kamroq aniq, lekin OpenAI xarajatisiz).
-        route_info = {"is_route": True, "from": None, "to": None, "author_role": "unclear"}
+        from_city, to_city = default_route if default_route else (None, None)
+        route_info = {"is_route": True, "from": from_city, "to": to_city, "author_role": "unclear"}
     else:
+        ai_input = context_text
+        if default_route:
+            # Guruh doimiy yo'nalishga bag'ishlangan (masalan "TOSHKENT<>NORIN") — a'zolar
+            # ko'pincha shahar nomini qayta yozmaydi, shuning uchun AI'ga eslatib qo'yamiz.
+            ai_input = (
+                f"[Eslatma: bu guruh doimiy ravishda {default_route[0]} - {default_route[1]} "
+                f"yo'nalishi uchun ishlatiladi. Xabarda shahar nomi yo'q bo'lsa, shu "
+                f"yo'nalishni nazarda tutgan deb hisobla.]\n{context_text}"
+            )
         try:
-            route_info = await classify_route(context_text)
+            route_info = await classify_route(ai_input)
         except OpenAIQuotaExceeded:
             logger.warning("OpenAI kvotasi tugadi, AI o'chirilmoqda")
             await _notify_admins_quota_exceeded(bot)
             return
-        logger.info("classify_route(%r) -> %r", context_text, route_info)
+        logger.info("classify_route(%r) -> %r", ai_input, route_info)
         if not route_info or not route_info.get("is_route"):
             return
 
@@ -152,6 +205,14 @@ async def process_text(
             # Bu boshqa shofyorning o'z reklama e'loni ("odam/pochta olamiz" — yo'lovchi
             # qidirayapti), mijoz emas — o'tkazib yuboramiz.
             return
+
+        if default_route:
+            route_info.setdefault("from", None)
+            route_info.setdefault("to", None)
+            if not route_info.get("from"):
+                route_info["from"] = default_route[0]
+            if not route_info.get("to"):
+                route_info["to"] = default_route[1]
 
     phone = contact_phone or route_info.get("phone") or extract_phone(context_text)
     group_link = build_group_link(chat_id, group_username, message_id)
