@@ -12,6 +12,7 @@ from filters import (
     extract_phone,
     group_default_route,
     is_obvious_driver_ad,
+    is_obvious_spam,
     quick_prefilter,
 )
 
@@ -162,6 +163,9 @@ async def process_text(
         return
 
     if _already_processed(chat_id, message_id):
+        return
+
+    if is_obvious_spam(text):
         return
 
     default_route = group_default_route(group_name)

@@ -76,7 +76,8 @@ _CAR_BRAND_RE = re.compile(
 # "Konditsioner bor" — mashinada konditsioner borligini aytish, faqat haydovchiga
 # xos tavsif (turli yozilish shakllari bilan).
 _CAR_FEATURE_RE = re.compile(
-    r"\b(konditsioner|kondisioner|kanditsaner|kondicioner|kondishiner|konditsaner)\b",
+    r"\b(konditsioner|kondisioner|kanditsaner|kondicioner|kondishiner|konditsaner|"
+    r"кондиционер|кандисанер|кондисионер|багаж|bagaj)\b",
     re.IGNORECASE,
 )
 
@@ -95,7 +96,7 @@ _TAKE_WORD_RE = re.compile(
 )
 _OLA_VERB_RE = re.compile(
     r"\b(olamiz|olamz|olaman|oladi|olib|olindi|olvolamiz|opketamiz|"
-    r"оламиз|оламз|оламан|олади|олиб|олинди|олволамиз)\w*",
+    r"оламиз|оламтиз|оламз|оламан|олади|олиб|олинди|олволамиз)\w*",
     re.IGNORECASE,
 )
 
@@ -111,6 +112,26 @@ _EXPLICIT_PHRASES = [
     "powtala",
     "qizlarimiz bor",
 ]
+
+
+# Taksi/yo'lovchi mavzusiga umuman aloqasi yo'q reklamalar (valyuta ayirboshlash,
+# kredit/zayom, SEO xizmatlari va h.k.) — "doimiy yo'nalish guruhi"da shahar nomi
+# talab qilinmagani uchun bunday spam ham AI'gacha yetib borishi mumkin edi.
+# Bularni AI'ga yubormasdan darhol tashlab yuboramiz (xarajatni tejash).
+_SPAM_RE = re.compile(
+    r"\b(usdt|u\.s\.d\.t|биткоин|bitcoin|криптовалют|crypto|займ|zaym|kredit|"
+    r"кредит|наличными|наличные|nalichnie|обмен\s*валют|seo\s*(xizmat|продвижен))\b",
+    re.IGNORECASE,
+)
+
+
+def is_obvious_spam(text: str) -> bool:
+    """Taksiga aloqasiz reklama (valyuta, kredit va h.k.) — AI'ga yubormasdan
+    darhol o'tkazib yuboriladi."""
+    if not text:
+        return False
+    normalized = _APOSTROPHE_RE.sub("", text)
+    return bool(_SPAM_RE.search(normalized))
 
 
 # O'zbekcha matnlarda "o'"/"g'" turli maxsus apostrof belgilari bilan yoziladi
