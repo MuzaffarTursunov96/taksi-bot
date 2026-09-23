@@ -1,4 +1,5 @@
 import asyncio
+import difflib
 import json
 import re
 import time
@@ -69,7 +70,7 @@ _CAR_BRAND_RE = re.compile(
     r"\b(cobalt|kobalt|kobilt|nexia|damas|malibu|spark|gentra|jentra|lachetti|lacetti|onix|"
     r"tracker|captiva|matiz|largus|haval|sonet|soneti|orlando|aveo|tico|labo|"
     r"кобальт|кобалт|коблт|нексия|дамас|малибу|спарк|джентра|лачетти|трекер|"
-    r"каптива|матиз|ларгус|хавал|соне[тi])\b",
+    r"каптива|матиз|ларгус|хавал|соне[тi]|онекс|оникс)\b",
     re.IGNORECASE,
 )
 
@@ -85,6 +86,15 @@ _CAR_FEATURE_RE = re.compile(
 # Bu ham faqat haydovchiga xos, mustaqil ishonchli belgi.
 _KAM_RE = re.compile(r"\b(kamdamiz|kammiz|камдамиз|каммиз)\b", re.IGNORECASE)
 
+# "Olindi" ("qabul qilindi, joy to'ldi") — yolg'iz o'zi ham haydovchi tomonidan
+# e'lonni yopish uchun ishlatiladi, "odam"/"pochta" so'zisiz kelishi mumkin.
+_OLINDI_STANDALONE_RE = re.compile(r"\b(olindi|олинди)\b", re.IGNORECASE)
+
+# "Mesta bo'sh"/"joy bo'sh" — mashinada bo'sh joy borligini bildiradi, faqat
+# haydovchiga xos.
+_SEAT_WORD_RE = re.compile(r"\b(mesta|joy|жой|места)\b", re.IGNORECASE)
+_FREE_WORD_RE = re.compile(r"\b(bosh|бўш)\b", re.IGNORECASE)
+
 
 # "odam olamiz"/"pochta olamiz"/"odam pochta olib ketamiz" (va variantlari: olamz,
 # olaman, oladi, olib, kirill оламиз/оламз/оламан/олади) — "boshqalarni olib
@@ -92,11 +102,11 @@ _KAM_RE = re.compile(r"\b(kamdamiz|kammiz|камдамиз|каммиз)\b", re.
 # so'zi + "ol" fe'li) borligida hisobga olinadi, yolg'iz "oladi" kabi so'z
 # tasodifan boshqa ma'noda kelmasligi uchun.
 _TAKE_WORD_RE = re.compile(
-    r"\b(odam\w*|kishi\w*|pochta\w*|одам\w*|киши\w*|почта\w*)", re.IGNORECASE
+    r"(odam\w*|kishi\w*|pochta\w*|одам\w*|киши\w*|почта\w*)", re.IGNORECASE
 )
 _OLA_VERB_RE = re.compile(
-    r"\b(olamiz|olamz|olaman|oladi|olib|olindi|olvolamiz|opketamiz|"
-    r"оламиз|оламтиз|оламз|оламан|олади|олиб|олинди|олволамиз)\w*",
+    r"\b(olamiz|olamz|olamaz|olaman|oladi|olib|olindi|olvolamiz|opketamiz|"
+    r"оламиз|оламтиз|оламаз|оламз|оламан|олади|олиб|олинди|олволамиз)\w*",
     re.IGNORECASE,
 )
 
@@ -120,7 +130,8 @@ _EXPLICIT_PHRASES = [
 # Bularni AI'ga yubormasdan darhol tashlab yuboramiz (xarajatni tejash).
 _SPAM_RE = re.compile(
     r"\b(usdt|u\.s\.d\.t|биткоин|bitcoin|криптовалют|crypto|займ|zaym|kredit|"
-    r"кредит|наличными|наличные|nalichnie|обмен\s*валют|seo\s*(xizmat|продвижен))\b",
+    r"кредит|наличными|наличные|nalichnie|обмен\s*валют|seo\s*(xizmat|продвижен)|"
+    r"зарабат\w*|заработ\w*|ishlab\s*topish|proofllg|proofl|стеллаж\w*|полк[иа]\w*)\b",
     re.IGNORECASE,
 )
 
@@ -139,6 +150,35 @@ def is_obvious_spam(text: str) -> bool:
 # barchasini olib tashlaymiz, aks holda "pochta" so'zi tanilmay qoladi.
 _APOSTROPHE_RE = re.compile(r"[ʻʼ'`´’]")
 
+# Uzun, o'ziga xos so'zlar (mashina markalari, "konditsioner", "kamdamiz" va
+# h.k.) — bu so'zlarning imlosi juda ko'p xato/variant bilan yoziladi (kobalt,
+# kobilt, koblt...), har birini qo'lda ro'yxatga qo'shib chiqish o'rniga endi
+# "taxminiy moslik" (Levenshtein'ga o'xshash, difflib orqali) ishlatamiz —
+# so'z shu ro'yxatdagi biror kalit so'zga 80%+ o'xshasa, mos deb hisoblanadi.
+# Faqat 5+ harfli so'zlar tekshiriladi — qisqa so'zlar tasodifan mos kelib
+# qolishi mumkin (masalan "ola" so'zi "olamiz"ga tasodifan yaqin chiqishi mumkin).
+_FUZZY_KEYWORDS = [
+    "cobalt", "kobalt", "nexia", "damas", "malibu", "spark", "gentra", "jentra",
+    "lachetti", "lacetti", "onix", "tracker", "captiva", "matiz", "largus",
+    "haval", "sonet", "orlando", "aveo", "labo", "konditsioner", "kondisioner",
+    "kamdamiz", "kammiz", "bagaj",
+    "кобальт", "кобалт", "нексия", "дамас", "малибу", "спарк", "джентра",
+    "лачетти", "онекс", "трекер", "каптива", "матиз", "ларгус", "хавал",
+    "кондиционер", "камдамиз", "каммиз", "багаж",
+]
+_FUZZY_WORD_SPLIT_RE = re.compile(r"[^\w'ʻʼ]+", re.UNICODE)
+_FUZZY_MIN_LEN = 5
+_FUZZY_CUTOFF = 0.8
+
+
+def _fuzzy_has_driver_keyword(normalized_text: str) -> bool:
+    for word in _FUZZY_WORD_SPLIT_RE.split(normalized_text.lower()):
+        if len(word) < _FUZZY_MIN_LEN:
+            continue
+        if difflib.get_close_matches(word, _FUZZY_KEYWORDS, n=1, cutoff=_FUZZY_CUTOFF):
+            return True
+    return False
+
 
 def is_obvious_driver_ad(text: str) -> bool:
     """Mashina markasi, yoki "odam/pochta olamiz" kabi ibora tilga olingan xabar —
@@ -147,12 +187,21 @@ def is_obvious_driver_ad(text: str) -> bool:
     if not text:
         return False
     normalized = _APOSTROPHE_RE.sub("", text)
-    if _CAR_BRAND_RE.search(normalized) or _CAR_FEATURE_RE.search(normalized) or _KAM_RE.search(normalized):
+    if (
+        _CAR_BRAND_RE.search(normalized)
+        or _CAR_FEATURE_RE.search(normalized)
+        or _KAM_RE.search(normalized)
+        or _OLINDI_STANDALONE_RE.search(normalized)
+    ):
         return True
     if _TAKE_WORD_RE.search(normalized) and _OLA_VERB_RE.search(normalized):
         return True
+    if _SEAT_WORD_RE.search(normalized) and _FREE_WORD_RE.search(normalized):
+        return True
     lowered = normalized.lower()
-    return any(phrase in lowered for phrase in _EXPLICIT_PHRASES)
+    if any(phrase in lowered for phrase in _EXPLICIT_PHRASES):
+        return True
+    return _fuzzy_has_driver_keyword(normalized)
 
 
 def group_default_route(group_name: str | None) -> tuple[str, str] | None:
