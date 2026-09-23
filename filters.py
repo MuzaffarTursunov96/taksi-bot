@@ -67,7 +67,9 @@ def quick_prefilter(text: str) -> bool:
 # yuborilmasdan, xarajatni tejash uchun to'g'ridan-to'g'ri "shofyor" deb hisoblanadi.
 _CAR_BRAND_RE = re.compile(
     r"\b(cobalt|kobalt|kobilt|nexia|damas|malibu|spark|gentra|jentra|lachetti|lacetti|onix|"
-    r"tracker|captiva|matiz|largus|haval|sonet|soneti|orlando|aveo|tico|labo)\b",
+    r"tracker|captiva|matiz|largus|haval|sonet|soneti|orlando|aveo|tico|labo|"
+    r"кобальт|кобалт|коблт|нексия|дамас|малибу|спарк|джентра|лачетти|трекер|"
+    r"каптива|матиз|ларгус|хавал|соне[тi])\b",
     re.IGNORECASE,
 )
 
@@ -88,11 +90,27 @@ _KAM_RE = re.compile(r"\b(kamdamiz|kammiz|камдамиз|каммиз)\b", re.
 # ketish" ma'nosida, bu ham ishonchli shofyor belgisi. Ikkalasi ham (odam/pochta
 # so'zi + "ol" fe'li) borligida hisobga olinadi, yolg'iz "oladi" kabi so'z
 # tasodifan boshqa ma'noda kelmasligi uchun.
-_TAKE_WORD_RE = re.compile(r"\b(odam|kishi|pochta|одам|киши|почта)\b", re.IGNORECASE)
+_TAKE_WORD_RE = re.compile(
+    r"\b(odam\w*|kishi\w*|pochta\w*|одам\w*|киши\w*|почта\w*)", re.IGNORECASE
+)
 _OLA_VERB_RE = re.compile(
-    r"\b(olamiz|olamz|olaman|oladi|olib|olindi|оламиз|оламз|оламан|олади|олиб|олинди)\b",
+    r"\b(olamiz|olamz|olaman|oladi|olib|olindi|olvolamiz|opketamiz|"
+    r"оламиз|оламз|оламан|олади|олиб|олинди|олволамиз)\w*",
     re.IGNORECASE,
 )
+
+# Aniq, real xabarlardan topilgan qo'shimcha iboralar — bularning har biri o'zi
+# yolg'iz holda ham ishonchli shofyor (yoki umuman taksi'ga aloqasiz reklama)
+# belgisi, shuning uchun oddiy substring sifatida tekshiriladi (typo/qo'shilib
+# ketgan so'zlarni ham tutish uchun, masalan "powtala", "opketamiz").
+_EXPLICIT_PHRASES = [
+    "йуналиш айрапорт",
+    "yo'nalish ayraport",
+    "почта мигирим",
+    "pochta migirim",
+    "powtala",
+    "qizlarimiz bor",
+]
 
 
 # O'zbekcha matnlarda "o'"/"g'" turli maxsus apostrof belgilari bilan yoziladi
@@ -110,7 +128,10 @@ def is_obvious_driver_ad(text: str) -> bool:
     normalized = _APOSTROPHE_RE.sub("", text)
     if _CAR_BRAND_RE.search(normalized) or _CAR_FEATURE_RE.search(normalized) or _KAM_RE.search(normalized):
         return True
-    return bool(_TAKE_WORD_RE.search(normalized) and _OLA_VERB_RE.search(normalized))
+    if _TAKE_WORD_RE.search(normalized) and _OLA_VERB_RE.search(normalized):
+        return True
+    lowered = normalized.lower()
+    return any(phrase in lowered for phrase in _EXPLICIT_PHRASES)
 
 
 def group_default_route(group_name: str | None) -> tuple[str, str] | None:
