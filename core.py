@@ -193,7 +193,14 @@ async def process_text(
             ai_input = (
                 f"[Eslatma: bu guruh doimiy ravishda {default_route[0]} - {default_route[1]} "
                 f"yo'nalishi uchun ishlatiladi. Xabarda shahar nomi yo'q bo'lsa, shu "
-                f"yo'nalishni nazarda tutgan deb hisobla.]\n{context_text}"
+                f"yo'nalishni nazarda tutgan deb hisobla — bu \"N ta odam bor\", \"joy "
+                f"kerak\", \"1 kishi bor\" kabi QISQA yo'lovchi/shofyor xabarlariga ham "
+                f"tegishli, ular hali ham is_route:true bo'lishi kerak.\n"
+                f"Bundan FAQAT bitta istisno bor: agar xabar mavzusi mashina/yo'l/"
+                f"yo'lovchi bilan MUTLAQO bog'liq bo'lmasa (masalan: qurilish ishi "
+                f"e'loni, pul qarz berish/olish, kripto/valyuta, ishga taklif, boshqa "
+                f"tovar-xizmat reklamasi) — o'shandagina \"is_route\": false qaytar.]"
+                f"\n{context_text}"
             )
         try:
             route_info = await classify_route(ai_input)

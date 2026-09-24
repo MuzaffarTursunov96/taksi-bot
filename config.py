@@ -65,8 +65,24 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 # Botni ushbu shaharlar orasidagi yo'nalishlarga qiziqtiramiz.
 # Har bir shahar uchun matnda uchraydigan turli yozilish variantlarini kiriting.
 CITY_ALIASES = {
-    "Toshkent": ["toshkent", "toskent", "tashkent", "tsh"],
-    "Norin": ["norin", "naryn"],
-    "Uchqo'rg'on": ["uchqo'rg'on", "uchqorgon", "uchqurgan", "uchqo'rg'on"],
-    "Namangan": ["namangan", "namanga"],
+    "Toshkent": ["toshkent", "toskent", "tashkent", "tsh", "тошкент", "ташкент"],
+    "Norin": ["norin", "naryn", "норин", "нарын"],
+    "Uchqo'rg'on": [
+        "uchqo'rg'on", "uchqorgon", "uchqurgan",
+        "учқўрғон", "учкургон", "учкурган",
+    ],
+    "Namangan": ["namangan", "namanga", "наманган"],
+    "Xaqqulobod": [
+        "xaqqulobod", "haqqulobod", "xaqqulabod", "haqqulabod",
+        "хаққулобод", "хаккулобод", "хаккулабод",
+    ],
+    "Chortoq": ["chortoq", "chortok", "чортоқ", "чорток"],
+    "Uychi": ["uychi", "уйчи"],
+    "Qo'qon": ["qo'qon", "qoqon", "kokand", "қўқон", "кокон", "коканд"],
+    "Qo'g'ay": ["qo'g'ay", "qogay", "kugay", "қўғай", "кугай"],
+    "Izboskan": ["izboskan", "избоскан"],
+    "Xorazm": ["xorazm", "хоразм"],
+    "Buxoro": ["buxoro", "bukhara", "бухоро", "бухара"],
+    "Pavorot": ["pavorot", "pavarot", "паворот", "паварот"],
+    "Baliqchi": ["baliqchi", "baliqchi", "баликчи", "балиқчи"],
 }

@@ -3,6 +3,7 @@ import difflib
 import json
 import re
 import time
+import unicodedata
 from pathlib import Path
 
 from openai import APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
@@ -46,6 +47,25 @@ def _is_quota_exhausted(error: RateLimitError | APIStatusError) -> bool:
     )
 
 
+# Shahar nomlarini ham imlo xatolariga chidamli qilish uchun (Levenshtein'ga
+# o'xshash, difflib orqali) taxminiy moslik qo'llaymiz. Faqat 5+ harfli
+# alias'lar ishlatiladi ("tsh" kabi qisqa qisqartmalar tasodifan mos kelib
+# qolishi mumkin, shuning uchun ular fuzzy qidiruvga kiritilmaydi).
+_CITY_FUZZY_WORDS = sorted(
+    {alias for aliases in CITY_ALIASES.values() for alias in aliases if len(alias) >= 5}
+)
+_CITY_WORD_SPLIT_RE = re.compile(r"[^\w'ʻʼ]+", re.UNICODE)
+
+
+def _fuzzy_has_city(text: str) -> bool:
+    for word in _CITY_WORD_SPLIT_RE.split(text.lower()):
+        if len(word) < 5:
+            continue
+        if difflib.get_close_matches(word, _CITY_FUZZY_WORDS, n=1, cutoff=0.8):
+            return True
+    return False
+
+
 def quick_prefilter(text: str) -> bool:
     """Xabarda kamida 1 ta shahar nomi uchraydimi, tez tekshiradi (arzon, OpenAI'siz).
 
@@ -56,11 +76,13 @@ def quick_prefilter(text: str) -> bool:
     if not text:
         return False
     lowered = text.lower()
-    return any(
+    if any(
         alias in lowered
         for aliases in CITY_ALIASES.values()
         for alias in aliases
-    )
+    ):
+        return True
+    return _fuzzy_has_city(text)
 
 
 # Mashina markasi nomi tilga olingan xabar deyarli har doim SHOFYOR e'loni bo'ladi
@@ -84,7 +106,9 @@ _CAR_FEATURE_RE = re.compile(
 
 # "kamdamiz"/"kammiz" — mashinada N ta bo'sh joy qolgani, to'ldirish e'loni.
 # Bu ham faqat haydovchiga xos, mustaqil ishonchli belgi.
-_KAM_RE = re.compile(r"\b(kamdamiz|kammiz|камдамиз|каммиз)\b", re.IGNORECASE)
+_KAM_RE = re.compile(
+    r"\b(kamdamiz|kammiz|камдамиз|каммиз)\b|\d\s*(kam\b|кам\b)", re.IGNORECASE
+)
 
 # "Olindi" ("qabul qilindi, joy to'ldi") — yolg'iz o'zi ham haydovchi tomonidan
 # e'lonni yopish uchun ishlatiladi, "odam"/"pochta" so'zisiz kelishi mumkin.
@@ -102,13 +126,27 @@ _FREE_WORD_RE = re.compile(r"\b(bosh|бўш)\b", re.IGNORECASE)
 # so'zi + "ol" fe'li) borligida hisobga olinadi, yolg'iz "oladi" kabi so'z
 # tasodifan boshqa ma'noda kelmasligi uchun.
 _TAKE_WORD_RE = re.compile(
-    r"(odam\w*|kishi\w*|pochta\w*|одам\w*|киши\w*|почта\w*)", re.IGNORECASE
-)
-_OLA_VERB_RE = re.compile(
-    r"\b(olamiz|olamz|olamaz|olaman|oladi|olib|olindi|olvolamiz|opketamiz|"
-    r"оламиз|оламтиз|оламаз|оламз|оламан|олади|олиб|олинди|олволамиз)\w*",
+    r"(odam\w*|kishi\w*|pochta\w*|одам\w*|одом\w*|киши\w*|почта\w*|пушта\w*)",
     re.IGNORECASE,
 )
+_OLA_VERB_RE = re.compile(
+    r"\b(olamiz|olamz|olamaz|olaman|olimiz|oladi|olib|olindi|olvolamiz|opketamiz|"
+    r"оламиз|оламтиз|оламаз|оламз|оламан|олимиз|олади|олиб|олинди|олволамиз)\w*",
+    re.IGNORECASE,
+)
+
+# "Salonda ayollar bor" — mashina salonida (ichida) ayol yo'lovchi borligi haqida
+# eslatma, faqat haydovchiga xos tavsif.
+_SALON_WORD_RE = re.compile(r"\b(salon\w*|салон\w*)\b", re.IGNORECASE)
+_AYOL_WORD_RE = re.compile(r"\b(ayol\w*|айол\w*)\b", re.IGNORECASE)
+
+# "Toshkent shahar ichidamiz" — "hozir shu shaharda, mashina bilan turibdi"
+# ma'nosida, mustaqil ishonchli shofyor belgisi.
+_ICHIDAMIZ_RE = re.compile(r"\b(ichidamiz|ичидамиз)\b", re.IGNORECASE)
+
+# "yuramiz"/"юрамиз" — yolg'iz o'zi noaniqroq (yo'lovchi ham shunday yozishi
+# mumkin), lekin foydalanuvchi so'rovi bo'yicha qo'shildi.
+_YURAMIZ_RE = re.compile(r"\b(yuramiz|юрамиз)\b", re.IGNORECASE)
 
 # Aniq, real xabarlardan topilgan qo'shimcha iboralar — bularning har biri o'zi
 # yolg'iz holda ham ishonchli shofyor (yoki umuman taksi'ga aloqasiz reklama)
@@ -120,6 +158,9 @@ _EXPLICIT_PHRASES = [
     "почта мигирим",
     "pochta migirim",
     "powtala",
+    "клент вактига",
+    "клиент вактига",
+    "client vaqtiga",
     "qizlarimiz bor",
 ]
 
@@ -131,17 +172,33 @@ _EXPLICIT_PHRASES = [
 _SPAM_RE = re.compile(
     r"\b(usdt|u\.s\.d\.t|биткоин|bitcoin|криптовалют|crypto|займ|zaym|kredit|"
     r"кредит|наличными|наличные|nalichnie|обмен\s*валют|seo\s*(xizmat|продвижен)|"
-    r"зарабат\w*|заработ\w*|ishlab\s*topish|proofllg|proofl|стеллаж\w*|полк[иа]\w*)\b",
+    r"зарабат\w*|заработ\w*|ishlab\s*topish|proofllg|proofl|стеллаж\w*|полк[иа]\w*|"
+    r"issiq\s*video\w*|горяч\w*\s*видео|profilga\s*kiring|kanal\w*\s*kiring|"
+    r"kanal\w*ga\s*kiring|щебень|бабок|бабки|в\s*долг|до\s*зп|zayom\s*beraman|"
+    r"qarz\s*beraman|маклер|makler|shinam\s*xona\w*|toza\s*shinam|"
+    r"профилиме\s*кирип|bloklangan\s*nomer\w*|мебель\w*|mebel\w*|"
+    r"standart\s*paket\w*|mubarak\s*safar\w*|safarni\s*yuksak|juma\s*madina\w*)\b",
     re.IGNORECASE,
 )
 
+# "/start@BotNomi" — boshqa botga reklama havolasi, alohida (chunki "/" harf
+# bo'lmagani uchun \b chegarasi bilan mos kelmaydi).
+_BOT_START_RE = re.compile(r"/start@\w+bot", re.IGNORECASE)
+
+
+# Taksi e'lonlarida havola (link) deyarli hech qachon bo'lmaydi — bo'lsa,
+# bu deyarli har doim reklama/spam (Instagram, kanal va h.k.).
+_URL_RE = re.compile(r"https?://\S+|www\.\S+|t\.me/\S+", re.IGNORECASE)
+
 
 def is_obvious_spam(text: str) -> bool:
-    """Taksiga aloqasiz reklama (valyuta, kredit va h.k.) — AI'ga yubormasdan
-    darhol o'tkazib yuboriladi."""
+    """Taksiga aloqasiz reklama (valyuta, kredit, havolalar va h.k.) — AI'ga
+    yubormasdan darhol o'tkazib yuboriladi."""
     if not text:
         return False
-    normalized = _APOSTROPHE_RE.sub("", text)
+    if _URL_RE.search(text) or _BOT_START_RE.search(text):
+        return True
+    normalized = _deep_normalize(text)
     return bool(_SPAM_RE.search(normalized))
 
 
@@ -149,6 +206,60 @@ def is_obvious_spam(text: str) -> bool:
 # (masalan "poʻchta", "poʼchta", "po`chta") — solishtirishdan oldin bularning
 # barchasini olib tashlaymiz, aks holda "pochta" so'zi tanilmay qoladi.
 _APOSTROPHE_RE = re.compile(r"[ʻʼ'`´’]")
+
+# Reklamalarda ko'pincha so'zlar bezak uchun harf-harf bo'shliq bilan yoziladi
+# (masalan "O L A M I Z"). Solishtirishdan oldin bunday ketma-ket yakka
+# harflarni birlashtirib qo'yamiz, aks holda kalit so'z tanilmay qoladi.
+_SPACED_LETTERS_RE = re.compile(r"\b(?:[^\W\d_]\s+){2,}[^\W\d_]\b", re.UNICODE)
+
+# Spam ko'pincha "chiroyli shrift" Unicode belgilari bilan yoziladi (masalan
+# 𝙆𝙐𝙉𝙇𝙄𝙆 — bular oddiy "KUNLIK" so'zi, lekin matematik-stil Unicode
+# belgilarida). Python'ning NFKC normalizatsiyasi bunday "muqobil" belgilarni
+# oddiy harflarga aylantirib beradi.
+def _nfkc(text: str) -> str:
+    return unicodedata.normalize("NFKC", text)
+
+
+# Yana bir keng tarqalgan usul — bitta so'z ichida lotin va kirill harflarini
+# aralashtirib yozish (masalan "OЛАМИЗ" — lotincha "O" + kirillcha "ЛАМИЗ").
+# So'z asosan qaysi alifboda bo'lsa, aralashgan o'xshash harflarni o'sha
+# alifboga aylantiramiz.
+_HOMOGLYPH_LATIN_TO_CYRILLIC = {
+    "A": "А", "B": "В", "E": "Е", "K": "К", "M": "М", "H": "Н", "O": "О",
+    "P": "Р", "C": "С", "T": "Т", "X": "Х", "Y": "У",
+    "a": "а", "e": "е", "o": "о", "p": "р", "c": "с", "x": "х", "y": "у",
+}
+_HOMOGLYPH_CYRILLIC_TO_LATIN = {v: k for k, v in _HOMOGLYPH_LATIN_TO_CYRILLIC.items()}
+_CYRILLIC_LETTER_RE = re.compile(r"[Ѐ-ӿ]")
+_LATIN_LETTER_RE = re.compile(r"[A-Za-z]")
+_ANY_WORD_RE = re.compile(r"\S+", re.UNICODE)
+
+
+def _fix_mixed_script_word(word: str) -> str:
+    cyr_count = len(_CYRILLIC_LETTER_RE.findall(word))
+    lat_count = len(_LATIN_LETTER_RE.findall(word))
+    if not (cyr_count and lat_count):
+        return word
+    table = _HOMOGLYPH_LATIN_TO_CYRILLIC if cyr_count >= lat_count else _HOMOGLYPH_CYRILLIC_TO_LATIN
+    return "".join(table.get(ch, ch) for ch in word)
+
+
+def _fix_mixed_scripts(text: str) -> str:
+    return _ANY_WORD_RE.sub(lambda m: _fix_mixed_script_word(m.group(0)), text)
+
+
+def _deep_normalize(text: str) -> str:
+    """Solishtirishdan oldin matnni chuqur tozalaydi: soxta Unicode shriftlar,
+    aralashgan lotin/kirill harflar, apostrof variantlari va harf-harf
+    ajratilgan so'zlarni — barchasini oddiy holga keltiradi."""
+    text = _nfkc(text)
+    text = _fix_mixed_scripts(text)
+    text = _APOSTROPHE_RE.sub("", text)
+    return _collapse_spaced_letters(text)
+
+
+def _collapse_spaced_letters(text: str) -> str:
+    return _SPACED_LETTERS_RE.sub(lambda m: re.sub(r"\s+", "", m.group(0)), text)
 
 # Uzun, o'ziga xos so'zlar (mashina markalari, "konditsioner", "kamdamiz" va
 # h.k.) — bu so'zlarning imlosi juda ko'p xato/variant bilan yoziladi (kobalt,
@@ -186,17 +297,22 @@ def is_obvious_driver_ad(text: str) -> bool:
     yubormasdan darhol shofyor deb hisoblab o'tkazib yuboramiz (xarajatni tejash)."""
     if not text:
         return False
-    normalized = _APOSTROPHE_RE.sub("", text)
+    normalized = _deep_normalize(text)
     if (
         _CAR_BRAND_RE.search(normalized)
         or _CAR_FEATURE_RE.search(normalized)
         or _KAM_RE.search(normalized)
         or _OLINDI_STANDALONE_RE.search(normalized)
+        or _ICHIDAMIZ_RE.search(normalized)
     ):
+        return True
+    if "🔖" in text and _YURAMIZ_RE.search(normalized):
         return True
     if _TAKE_WORD_RE.search(normalized) and _OLA_VERB_RE.search(normalized):
         return True
     if _SEAT_WORD_RE.search(normalized) and _FREE_WORD_RE.search(normalized):
+        return True
+    if _SALON_WORD_RE.search(normalized) and _AYOL_WORD_RE.search(normalized):
         return True
     lowered = normalized.lower()
     if any(phrase in lowered for phrase in _EXPLICIT_PHRASES):
@@ -256,7 +372,29 @@ def build_system_prompt() -> str:
         "chiqyapti/yo'lda) + yo'lovchi chaqirig'i (\"odam bo'lsa yozilsin/yozsin\", \"yo'lda "
         "odam bo'lsa aytilsin\") — bu ham SHOFYOR belgisi, mashina/avto so'zi aytilmasa ham, "
         "chunki faqat mashinadagi odam boshqalarni \"yo'lda olib ketishi\" mumkin.\n\n"
+        "MUHIM QOIDA: \"beradi\"/\"beramiz\" so'zi PUL haqida ishlatilsa (masalan \"120 "
+        "mingdan beradi\", \"pul beradi\") — bu YO'LOVCHI puli TO'LASHga tayyorligini "
+        "bildiradi, demak PASSENGER, SHOFYOR emas! (Shofyor \"oladi\"/\"olamiz\" deydi — "
+        "pulni/yo'lovchini U OLADI; yo'lovchi esa \"beradi\" — pulni U TO'LAYDI.) Bu "
+        "ikkalasini adashtirma: \"oladi/olamiz\" = shofyor, \"beradi/beramiz\" (pul haqida) "
+        "= yo'lovchi.\n\n"
+        "MUHIM: \"mestaga\"/\"joyga\" so'zi yolg'iz o'zi (masalan \"...mestaga odam bor\") "
+        "— bu shunchaki \"o'sha yo'nalishga ketadigan odam bor\" degani, MASHINADAGI BO'SH "
+        "JOY tavsifi emas (bu faqat \"mesta BO'SH\"/\"joy BO'SH\" shaklida, aniq \"bo'sh\" "
+        "so'zi bilan birga kelsagina shofyor belgisi bo'ladi). \"Bo'sh\" so'zisiz — passenger.\n\n"
         "Misollar:\n"
+        "Xabar: \"Toshkentda Namangan Toraqorgonga ikkita odam bor 120 mingdan beradi tel "
+        "978550515\"\n"
+        'Javob: {"is_route": true, "author_role": "passenger"} '
+        "(sabab: \"beradi\" — yo'lovchilar 120 mingdan PUL TO'LASHga tayyorligini "
+        "bildiryapti, bu shofyorning narx e'loni emas, balki yo'lovchi tomonidan taklif; "
+        "mashina/\"olamiz\"/\"kerak\" so'zi yo'q)\n\n"
+        "Xabar: \"Hozirga beruniy metrodan oldi mestaga o'g'il bola bor namangan "
+        "yangiqo'rg'onga\"\n"
+        'Javob: {"is_route": true, "author_role": "passenger"} '
+        "(sabab: \"mestaga ... bola bor\" — bu \"o'sha yo'nalishga ketadigan bola bor\" "
+        "degani, \"mesta BO'SH\" emas — \"bo'sh\" so'zi yo'q, shuning uchun mashinadagi "
+        "joy tavsifi emas; mashina/\"olamiz\"/\"kerak\" so'zi ham yo'q)\n\n"
         "Xabar: \"2 KISHI KERAK AYOLA BOR TEL.999976222\"\n"
         'Javob: {"is_route": true, "author_role": "driver"} '
         "(sabab: \"N KISHI KERAK\" — mashinadagi bo'sh joylarni to'ldirish e'loni)\n\n"
