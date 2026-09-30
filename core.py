@@ -234,6 +234,8 @@ async def process_text(
 
     if delivery_mode != "group_only":
         for driver_chat_id in driver_chat_ids:
+            if storage.is_muted(driver_chat_id):
+                continue
             try:
                 await bot.send_message(driver_chat_id, caption, reply_markup=keyboard)
             except Exception:

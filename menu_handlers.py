@@ -97,9 +97,13 @@ def main_reply_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def bot_inline_keyboard() -> InlineKeyboardMarkup:
+def bot_inline_keyboard(user_id: int) -> InlineKeyboardMarkup:
     ai_state = "🧠 AI: YOQILGAN ✅" if storage.is_ai_enabled() else "🧠 AI: O'CHIRILGAN ⏸"
     bot_state = "🤖 Bot: YOQILGAN ✅" if storage.is_processing_enabled() else "🤖 Bot: O'CHIRILGAN ⏸"
+    my_mute_state = (
+        "🔕 Menga xabar kelishi: O'CHIRILGAN" if storage.is_muted(user_id)
+        else "🔔 Menga xabar kelishi: YOQILGAN"
+    )
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=bot_state, callback_data="noop")],
@@ -111,6 +115,11 @@ def bot_inline_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="🧠 AI yoqish", callback_data="ai:on"),
                 InlineKeyboardButton(text="🧠 AI o'chirish", callback_data="ai:off"),
+            ],
+            [InlineKeyboardButton(text=my_mute_state, callback_data="noop")],
+            [
+                InlineKeyboardButton(text="🔔 Menga yoqish", callback_data="mymute:off"),
+                InlineKeyboardButton(text="🔕 Menga o'chirish", callback_data="mymute:on"),
             ],
         ]
     )
@@ -424,7 +433,9 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == BTN_BOT, _is_root)
 async def show_bot_menu(message: Message) -> None:
-    await message.answer("🤖 Bot boshqaruvi:", reply_markup=bot_inline_keyboard())
+    await message.answer(
+        "🤖 Bot boshqaruvi:", reply_markup=bot_inline_keyboard(message.from_user.id)
+    )
 
 
 @router.message(F.text == BTN_GROUPS, _is_admin)
@@ -632,7 +643,7 @@ async def cb_bot_on(callback: CallbackQuery) -> None:
         return await callback.answer()
     storage.set_processing_enabled(True)
     await callback.answer("Bot yoqildi ✅")
-    await _safe_edit_markup(callback.message, bot_inline_keyboard())
+    await _safe_edit_markup(callback.message, bot_inline_keyboard(callback.from_user.id))
 
 
 @router.callback_query(F.data == "bot:off")
@@ -641,7 +652,7 @@ async def cb_bot_off(callback: CallbackQuery) -> None:
         return await callback.answer()
     storage.set_processing_enabled(False)
     await callback.answer("Bot o'chirildi ⏸")
-    await _safe_edit_markup(callback.message, bot_inline_keyboard())
+    await _safe_edit_markup(callback.message, bot_inline_keyboard(callback.from_user.id))
 
 
 @router.callback_query(F.data == "ai:on")
@@ -650,7 +661,25 @@ async def cb_ai_on(callback: CallbackQuery) -> None:
         return await callback.answer()
     storage.set_ai_enabled(True)
     await callback.answer("AI tahlili yoqildi ✅")
-    await _safe_edit_markup(callback.message, bot_inline_keyboard())
+    await _safe_edit_markup(callback.message, bot_inline_keyboard(callback.from_user.id))
+
+
+@router.callback_query(F.data == "mymute:on")
+async def cb_mymute_on(callback: CallbackQuery) -> None:
+    if not storage.is_root(callback.from_user.id):
+        return await callback.answer()
+    storage.set_muted(callback.from_user.id, True)
+    await callback.answer("Sizga xabar kelishi to'xtatildi 🔕")
+    await _safe_edit_markup(callback.message, bot_inline_keyboard(callback.from_user.id))
+
+
+@router.callback_query(F.data == "mymute:off")
+async def cb_mymute_off(callback: CallbackQuery) -> None:
+    if not storage.is_root(callback.from_user.id):
+        return await callback.answer()
+    storage.set_muted(callback.from_user.id, False)
+    await callback.answer("Sizga xabar kelishi qayta yoqildi 🔔")
+    await _safe_edit_markup(callback.message, bot_inline_keyboard(callback.from_user.id))
 
 
 @router.callback_query(F.data == "ai:off")
@@ -659,7 +688,7 @@ async def cb_ai_off(callback: CallbackQuery) -> None:
         return await callback.answer()
     storage.set_ai_enabled(False)
     await callback.answer("AI tahlili o'chirildi ⏸")
-    await _safe_edit_markup(callback.message, bot_inline_keyboard())
+    await _safe_edit_markup(callback.message, bot_inline_keyboard(callback.from_user.id))
 
 
 @router.callback_query(F.data == "group:menu")

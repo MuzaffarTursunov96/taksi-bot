@@ -203,6 +203,23 @@ def set_verification_group_id(chat_id: int | None) -> None:
     _save_settings(settings)
 
 
+def is_muted(chat_id: int) -> bool:
+    """Shofyor o'zi uchun (boshqalarga ta'sir qilmasdan) yangi buyurtma
+    xabarlarini vaqtincha to'xtatib qo'ygan bo'lsa True."""
+    return chat_id in _load_settings().get("muted_ids", [])
+
+
+def set_muted(chat_id: int, muted: bool) -> None:
+    settings = _load_settings()
+    muted_ids = set(settings.get("muted_ids", []))
+    if muted:
+        muted_ids.add(chat_id)
+    else:
+        muted_ids.discard(chat_id)
+    settings["muted_ids"] = list(muted_ids)
+    _save_settings(settings)
+
+
 _PENDING_REQUESTS_PATH = Path(__file__).parent / "pending_requests.json"
 
 
