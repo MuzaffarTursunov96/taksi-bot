@@ -111,7 +111,18 @@ _CAR_FEATURE_RE = re.compile(
 # "kamdamiz"/"kammiz" — mashinada N ta bo'sh joy qolgani, to'ldirish e'loni.
 # Bu ham faqat haydovchiga xos, mustaqil ishonchli belgi.
 _KAM_RE = re.compile(
-    r"\b(kamdamiz|kammiz|камдамиз|каммиз)\b|\d\s*(kam\b|кам\b)", re.IGNORECASE
+    r"\b(kamdamiz|kammiz|камдамиз|каммиз)\b|\d\s*(kam\b|кам\b)|"
+    r"\b(bir|bitta|ikki|ikkita|uch|uchta|бир|битта|икки|иккита|уч|учта)\s*"
+    r"(ta\s*|та\s*)?(kishi|odam|киши|одам)\s*(kam|кам)\b",
+    re.IGNORECASE,
+)
+
+# "2 ta o'rin bor" — mashinada bo'sh o'rindiq borligi, haydovchiga xos.
+_ORIN_BOR_RE = re.compile(r"\b(orin|ўрин|урин)\s*(bor|бор)\b", re.IGNORECASE)
+
+# "Xudo xohlasa 12:00 da yuramiz" — jo'nash vaqtini e'lon qilish, shofyor iborasi.
+_XUDO_XOLASA_RE = re.compile(
+    r"\b(xudo|худо)\s*(xo\w*|хо\w*)\b.*\b(yuramiz|юрамиз)\b", re.IGNORECASE | re.DOTALL
 )
 
 # "Olindi" ("qabul qilindi, joy to'ldi") — yolg'iz o'zi ham haydovchi tomonidan
@@ -130,12 +141,14 @@ _FREE_WORD_RE = re.compile(r"\b(bosh|бўш)\b", re.IGNORECASE)
 # so'zi + "ol" fe'li) borligida hisobga olinadi, yolg'iz "oladi" kabi so'z
 # tasodifan boshqa ma'noda kelmasligi uchun.
 _TAKE_WORD_RE = re.compile(
-    r"(odam\w*|kishi\w*|pochta\w*|одам\w*|одом\w*|киши\w*|почта\w*|пушта\w*)",
+    r"(odam\w*|odom\w*|odma\b|kishi\w*|pochta\w*|poshta\w*|"
+    r"одам\w*|одом\w*|\bода\b|киши\w*|почта\w*|пошта\w*|пушта\w*)",
     re.IGNORECASE,
 )
 _OLA_VERB_RE = re.compile(
-    r"\b(olamiz|olamz|olamaz|olaman|olimiz|oladi|olib|olindi|olvolamiz|opketamiz|"
-    r"оламиз|оламтиз|оламаз|оламз|оламан|олимиз|олади|олиб|олинди|олволамиз)\w*",
+    r"\b(olamiz|olamz|olamaz|olaman|olimiz|olmiz|oladi|olib|olindi|olvolamiz|opketamiz|"
+    r"ovolamiz|оламиз|оламтиз|оламаз|оламз|оламан|олимиз|олмиз|олади|олиб|олинди|"
+    r"олволамиз|оволамиз)\w*",
     re.IGNORECASE,
 )
 
@@ -151,6 +164,12 @@ _ICHIDAMIZ_RE = re.compile(r"\b(ichidamiz|ичидамиз)\b", re.IGNORECASE)
 # "yuramiz"/"юрамиз" — yolg'iz o'zi noaniqroq (yo'lovchi ham shunday yozishi
 # mumkin), lekin foydalanuvchi so'rovi bo'yicha qo'shildi.
 _YURAMIZ_RE = re.compile(r"\b(yuramiz|юрамиз)\b", re.IGNORECASE)
+
+# "Toshkentga yuramiz" — "...ga" yo'nalishi bilan birga kelgan "yuramiz"
+# (orada vaqt kabi bir necha so'z bo'lishi mumkin), shofyor e'loni.
+_GA_YURAMIZ_RE = re.compile(
+    r"\w(ga|га)\b(\s+\S+){0,4}?\s+(yuramiz|юрамиз)\b", re.IGNORECASE
+)
 
 # Aniq, real xabarlardan topilgan qo'shimcha iboralar — bularning har biri o'zi
 # yolg'iz holda ham ishonchli shofyor (yoki umuman taksi'ga aloqasiz reklama)
@@ -181,7 +200,12 @@ _SPAM_RE = re.compile(
     r"kanal\w*ga\s*kiring|щебень|бабок|бабки|в\s*долг|до\s*зп|zayom\s*beraman|"
     r"qarz\s*beraman|маклер|makler|shinam\s*xona\w*|toza\s*shinam|"
     r"профилиме\s*кирип|bloklangan\s*nomer\w*|мебель\w*|mebel\w*|"
-    r"standart\s*paket\w*|mubarak\s*safar\w*|safarni\s*yuksak|juma\s*madina\w*)\b",
+    r"standart\s*paket\w*|mubarak\s*safar\w*|safarni\s*yuksak|juma\s*madina\w*|"
+    r"менеджер\w*|фаст-?фуд\w*|лавозим\w*|lavozim\w*|tikuvchi\w*|тикувчи\w*|"
+    r"orgatamiz|ўргатамиз|tajriba\w*|тажриба\w*|\d+\s*xona\w*|\d+\s*хона\w*|"
+    r"spam\w*|спам\w*|kurs\w*|курс\w*|reklama\s*va\s*elon\w*|"
+    r"приглаша\w*|курьер\w*|оплата\s*от|занятост\w*|хаммом\w*|hammom\w*|"
+    r"sevgilingiz\w*|premium\w*|группалар\w*\s*юбор\w*|guruhlar\w*\s*yubor\w*)\b",
     re.IGNORECASE,
 )
 
@@ -209,7 +233,7 @@ def is_obvious_spam(text: str) -> bool:
 # O'zbekcha matnlarda "o'"/"g'" turli maxsus apostrof belgilari bilan yoziladi
 # (masalan "poʻchta", "poʼchta", "po`chta") — solishtirishdan oldin bularning
 # barchasini olib tashlaymiz, aks holda "pochta" so'zi tanilmay qoladi.
-_APOSTROPHE_RE = re.compile(r"[ʻʼ'`´’]")
+_APOSTROPHE_RE = re.compile(r"[ʻʼ'`´‘’]")
 
 # Reklamalarda ko'pincha so'zlar bezak uchun harf-harf bo'shliq bilan yoziladi
 # (masalan "O L A M I Z"). Solishtirishdan oldin bunday ketma-ket yakka
@@ -308,9 +332,15 @@ def is_obvious_driver_ad(text: str) -> bool:
         or _KAM_RE.search(normalized)
         or _OLINDI_STANDALONE_RE.search(normalized)
         or _ICHIDAMIZ_RE.search(normalized)
+        or _ORIN_BOR_RE.search(normalized)
+        or _XUDO_XOLASA_RE.search(normalized)
     ):
         return True
     if "🔖" in text and _YURAMIZ_RE.search(normalized):
+        return True
+    if "🚘" in text:
+        return True
+    if _GA_YURAMIZ_RE.search(normalized):
         return True
     if _TAKE_WORD_RE.search(normalized) and _OLA_VERB_RE.search(normalized):
         return True
