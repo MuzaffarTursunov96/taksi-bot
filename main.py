@@ -33,6 +33,7 @@ async def main() -> None:
     logger.info("Saqlangan Telethon akkauntlari ulanmoqda...")
     await telethon_accounts.load_all_accounts(bot)
     asyncio.create_task(telethon_accounts.periodic_rescan(bot))
+    asyncio.create_task(telethon_accounts.periodic_channel_poll())
 
     logger.info("Bot ishga tushdi.")
     await dp.start_polling(bot)

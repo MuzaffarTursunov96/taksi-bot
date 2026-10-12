@@ -12,7 +12,11 @@ from config import CITY_ALIASES, OPENAI_API_KEY, OPENAI_MODEL
 
 PHONE_RE = re.compile(r"(\+?998[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\b\d{9}\b)")
 
-_client = AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+_client = (
+    AsyncOpenAI(api_key=OPENAI_API_KEY, timeout=20.0, max_retries=0)
+    if OPENAI_API_KEY
+    else None
+)
 
 # Kelajakda o'z modelimizni o'qitish uchun: OpenAI har bir tasnifini shu faylga
 # yozib boradi (matn + natija). Fayl vaqt o'tishi bilan o'quv ma'lumotiga aylanadi.

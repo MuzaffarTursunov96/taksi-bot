@@ -5,10 +5,12 @@ mantiq (xabarlarni tekshirish, guruh nomlarini eslab qolish) orqali ishlaydi.
 """
 
 import asyncio
+import datetime
 import logging
+import time
 
 from aiogram import Bot
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, types
 
 from config import API_HASH, API_ID
 from core import process_text
@@ -60,6 +62,9 @@ def attach_handlers(client: TelegramClient, bot: Bot) -> None:
 
         if not storage.is_group_monitored(event.chat_id):
             return
+
+        lag = time.time() - event.date.timestamp()
+        logger.info("KECHIKISH chat=%s msg=%s lag=%.1fs", event.chat_id, event.id, lag)
 
         sender = await event.get_sender()
         if sender is None or getattr(sender, "bot", False):
@@ -148,6 +153,61 @@ async def periodic_rescan(bot: Bot) -> None:
                 await rescan_dialogs(client, bot, owner_id)
             except Exception:
                 logger.exception("Akkaunt (%s) qayta skanerlashda xato", owner_id)
+
+
+# Telegram katta guruhlardan yangi xabarlarni akkauntga har doim ham darhol "push"
+# qilmaydi. Bunday holda Telethon guruhni faqat 15 daqiqa jim turgandan keyin
+# (NO_UPDATES_TIMEOUT) o'zi tekshiradi — xabarlar shofyorlarga 12-15 daqiqa kech
+# yetib boradi. Shuning uchun faqat KUZATILAYOTGAN guruhlar uchun bu kutish
+# muddatini qisqartiramiz: har _CHANNEL_POLL_INTERVAL soniyada ularning
+# "deadline"ini hozirga suramiz va Telethon darhol GetChannelDifference so'raydi.
+_CHANNEL_POLL_INTERVAL = 20
+
+
+def _monitored_channel_ids() -> set[int]:
+    ids = set()
+    for chat_id in storage.get_monitored_groups():
+        chat_id_str = str(chat_id)
+        if chat_id_str.startswith("-100"):
+            ids.add(int(chat_id_str[4:]))
+    return ids
+
+
+def _expedite_monitored_channels(client: TelegramClient, channel_ids: set[int]) -> None:
+    message_box = getattr(client, "_message_box", None)
+    if message_box is None:
+        return
+    now = asyncio.get_running_loop().time()
+    due = {
+        channel_id
+        for channel_id in channel_ids
+        if channel_id in message_box.map
+        and channel_id not in message_box.getting_diff_for
+        and message_box.map[channel_id].deadline > now
+    }
+    if not due:
+        return
+    message_box.reset_deadlines(due, now)
+    # Update tsikli eski deadline bo'yicha uxlab yotgan bo'lishi mumkin — uni
+    # zararsiz (pts'siz) yangilanish bilan uyg'otamiz, u deadline'larni qayta tekshiradi.
+    client._updates_queue.put_nowait(
+        types.UpdateShort(update=types.UpdateConfig(), date=datetime.datetime.now(datetime.timezone.utc))
+    )
+
+
+async def periodic_channel_poll() -> None:
+    while True:
+        await asyncio.sleep(_CHANNEL_POLL_INTERVAL)
+        try:
+            channel_ids = _monitored_channel_ids()
+        except Exception:
+            logger.exception("Kuzatilayotgan guruhlar ro'yxatini o'qib bo'lmadi")
+            continue
+        for owner_id, client in list(_active_clients.items()):
+            try:
+                _expedite_monitored_channels(client, channel_ids)
+            except Exception:
+                logger.exception("Akkaunt (%s) guruhlarini tezlashtirishda xato", owner_id)
 
 
 def get_active_owner_ids() -> list[int]:
