@@ -45,6 +45,10 @@ async def on_contact_shared(message: Message) -> None:
 
 @router.message(F.text)
 async def on_group_text(message: Message) -> None:
+    if message.chat.type == "private":
+        # Shaxsiy chatlar (admin buyruqlari/menyu) yo'nalish tekshiruviga kirmaydi.
+        return
+    storage.record_known_group(message.chat.id, message.chat.title)
     if not storage.is_group_monitored(message.chat.id):
         return
     await process_text(

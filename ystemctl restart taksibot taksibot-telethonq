@@ -1,0 +1,20 @@
+[0;1;32m●[0m taksibot-telethon.service - Taksi bot telethon listener
+     Loaded: loaded (]8;;file://vps11232.eskiz.uz/etc/systemd/system/taksibot-telethon.service/etc/systemd/system/taksibot-telethon.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Mon 2026-08-17 19:51:14 +05; 1min 4s ago
+   Main PID: 4176 (python)
+      Tasks: 1[0;38;5;245m (limit: 1107)[0m
+     Memory: 158.9M
+        CPU: 3.809s
+     CGroup: /system.slice/taksibot-telethon.service
+             └─[0;38;5;245m4176 /opt/taksibot/venv/bin/python /opt/taksibot/telethon_listener.py[0m
+
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:   -4190570573 — kursdoshlar
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:   -1001535365569 — Jaloliddin Ahmadaliyev
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:   -1002291266541 — Bizning oila
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:   -1001436761042 — Plus Messenger FAQ
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:   -1002445502602 — Lemon Cash - Сообщество🍋
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:   -1002591091152 — ❤️❤️
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:   -5263127013 — 👳‍♂️👵ZURYODLARIM🤲
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:✅ -1003282591660 — Safar_taxi_driver
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:   -1002018539779 — AVGANA_MUZ🇦🇫
+Aug 17 19:51:23 vps11232.eskiz.uz python[4176]: INFO:__main__:   -4786444659 — ЕКС БригадА ЕКС
